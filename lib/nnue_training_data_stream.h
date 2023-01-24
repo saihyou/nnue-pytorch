@@ -8,8 +8,8 @@
 #include <fstream>
 #include <string>
 #include <memory>
-
-#include <ppl.h>
+#include <numeric>
+//#include <ppl.h>
 
 namespace training_data {
 
@@ -69,8 +69,18 @@ namespace training_data {
             m_filename(filename),
             m_eof(!m_stream),
             m_cyclic(cyclic),
-            m_skipPredicate(std::move(skipPredicate))
+            m_skipPredicate(std::move(skipPredicate)),
+	    m_engine(std::random_device()()),
+            m_curr(0)
         {
+	  m_stream.seekg(0, std::ios_base::end);
+            const auto size = m_stream.tellg() / sizeof(Learner::PackedSfenValue);
+            m_stream.seekg(0, std::ios_base::beg);
+            m_data.resize(size);
+            m_stream.read(reinterpret_cast<char*>(&m_data[0]), sizeof(Learner::PackedSfenValue) * size);
+	    m_indexes.resize(size);
+            std::iota(m_indexes.begin(), m_indexes.end(), 0);
+            std::shuffle(m_indexes.begin(), m_indexes.end(), m_engine);
         }
 
         std::optional<TrainingDataEntry> next() override
@@ -112,13 +122,20 @@ namespace training_data {
             bool reopenedFileOnce = false;
             for (;;)
             {
-                if (m_stream.read(reinterpret_cast<char*>(&packedSfenValues[0]), sizeof(Learner::PackedSfenValue) * n))
+                if (m_curr + n < m_indexes.size())
                 {
                     vec.resize(n);
+#if 0
                     concurrency::parallel_for(size_t(0), n, [&vec, &packedSfenValues](size_t i)
                         {
                             vec[i] = packedSfenValueToTrainingDataEntry(packedSfenValues[i]);
                         });
+#else
+		    for (size_t i = 0; i < n; i++)
+                    {
+                        vec[i] = packedSfenValueToTrainingDataEntry(m_data[m_indexes[m_curr++]]);
+                    }
+#endif
                     return;
                 }
                 else
@@ -128,7 +145,8 @@ namespace training_data {
                         if (reopenedFileOnce)
                             return;
 
-                        m_stream = std::fstream(m_filename, openmode);
+                        m_curr = 0;
+                        std::shuffle(m_indexes.begin(), m_indexes.end(), m_engine);
                         reopenedFileOnce = true;
                         if (!m_stream)
                             return;
@@ -155,6 +173,10 @@ namespace training_data {
         bool m_eof;
         bool m_cyclic;
         std::function<bool(const TrainingDataEntry&)> m_skipPredicate;
+      std::vector<Learner::PackedSfenValue> m_data;
+        std::vector<unsigned int> m_indexes;
+        std::mt19937_64 m_engine;
+        unsigned int m_curr;
     };
 
     inline std::unique_ptr<BasicSfenInputStream> open_sfen_input_file(const std::string& filename, bool cyclic, std::function<bool(const TrainingDataEntry&)> skipPredicate = nullptr)

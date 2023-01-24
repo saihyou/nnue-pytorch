@@ -70,6 +70,10 @@ def main():
     # from .pt the optimizer is only created after the training is started
     nnue.gamma = args.gamma
     nnue.lr = args.lr
+    nnue.label_smoothing_eps = args.label_smoothing_eps
+    nnue.num_batches_warmup = args.num_batches_warmup
+    nnue.newbob_decay = args.newbob_decay
+    nnue.num_epochs_to_adjust_lr = args.num_epochs_to_adjust_lr
 
   print("Feature set: {}".format(feature_set.name))
   print("Num real features: {}".format(feature_set.num_real_features))
@@ -100,7 +104,7 @@ def main():
   checkpoint_callback = pl.callbacks.ModelCheckpoint(save_last=True)
   trainer = pl.Trainer.from_argparse_args(args, callbacks=[checkpoint_callback], logger=tb_logger)
 
-  main_device = trainer.root_device if trainer.root_gpu is None else 'cuda:' + str(trainer.root_gpu)
+  main_device = trainer.root_device if trainer.strategy.root_device.index is None else 'cuda:' + str(trainer.strategy.root_device.index)
 
   if args.py_data:
     print('Using python data loader')
