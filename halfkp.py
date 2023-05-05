@@ -7,6 +7,7 @@ from feature_block import *
 NUM_SQ = 81
 # NUM_PT = 10
 NUM_PLANES = 1548
+REL_FEATURES = 5292
 
 def orient(is_white_pov: bool, sq: int):
   return (63 * (not is_white_pov)) ^ sq
@@ -31,7 +32,7 @@ class Features(FeatureBlock):
 
 class FactorizedFeatures(FeatureBlock):
   def __init__(self):
-    super(FactorizedFeatures, self).__init__('HalfKP^', 0x5d69d5b8, OrderedDict([('HalfKP', NUM_PLANES * NUM_SQ), ('HalfK', NUM_SQ), ('P', NUM_PLANES )]))
+    super(FactorizedFeatures, self).__init__('HalfKP^', 0x5d69d5b8, OrderedDict([('HalfKP', NUM_PLANES * NUM_SQ), ('HalfK', NUM_SQ), ('P', NUM_PLANES ), ('HalfRelKP', REL_FEATURES)]))
     self.base = Features()
 
   def get_active_features(self, board: chess.Board):
@@ -57,8 +58,18 @@ class FactorizedFeatures(FeatureBlock):
 
     k_idx = idx // NUM_PLANES
     p_idx = idx % NUM_PLANES
+    def _make_relkp_index(sq_k, p):
+      if p < 90:
+        return p
+      w = 9 * 2 - 1
+      h = 9 * 2 - 1
+      piece_index = (p - 90) // 81
+      sq_p = (p - 90) % 81
+      relative_file = (sq_p // 9) - (sq_k // 9) + (w // 2)
+      relative_rank = (sq_p % 9) - (sq_k % 9) + (h // 2)
+      return int(h * w * piece_index + h * relative_file + relative_rank + 90)
 
-    return [idx, self.get_factor_base_feature('HalfK') + k_idx, self.get_factor_base_feature('P') + p_idx]
+    return [idx, self.get_factor_base_feature('HalfK') + k_idx, self.get_factor_base_feature('P') + p_idx, self.get_factor_base_feature('HalfRelKP') + _make_relkp_index(k_idx, idx)]
 
 '''
 This is used by the features module for discovery of feature blocks.

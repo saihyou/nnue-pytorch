@@ -36,6 +36,8 @@ def main():
   parser = pl.Trainer.add_argparse_args(parser)
   parser.add_argument("--py-data", action="store_true", help="Use python data loader (default=False)")
   parser.add_argument("--lambda", default=1.0, type=float, dest='lambda_', help="lambda=1.0 = train on evaluations, lambda=0.0 = train on game results, interpolates between (default=1.0).")
+  parser.add_argument("--start-lambda", default=None, type=float, dest='start_lambda', help="lambda to use at first epoch.")
+  parser.add_argument("--end-lambda", default=None, type=float, dest='end_lambda', help="lambda to use at last epoch.")
   parser.add_argument("--gamma", default=0.992, type=float, dest='gamma', help="Multiplicative factor applied to the learning rate after every epoch.")
   parser.add_argument("--lr", default=8.75e-4, type=float, dest='lr', help="Initial learning rate.")
   parser.add_argument("--num-workers", default=1, type=int, dest='num_workers', help="Number of worker threads to use for data loading. Currently only works well for binpack.")
@@ -45,11 +47,7 @@ def main():
   parser.add_argument("--smart-fen-skipping", action='store_true', dest='smart_fen_skipping', help="If enabled positions that are bad training targets will be skipped during loading. Default: False")
   parser.add_argument("--random-fen-skipping", default=0, type=int, dest='random_fen_skipping', help="skip fens randomly on average random_fen_skipping before using one.")
   parser.add_argument("--resume-from-model", dest='resume_from_model', help="Initializes training using the weights from the given .pt model")
-  parser.add_argument("--label-smoothing-eps", default=0.0, type=float, dest='label_smoothing_eps', help="Label smoothing eps.")
-  parser.add_argument("--num-batches-warmup", default=10000, type=int, dest='num_batches_warmup', help="Number of batches for warm-up.")
-  parser.add_argument("--newbob-decay", default=0.5, type=float, dest='newbob_decay', help="Newbob decay.")
   parser.add_argument("--epoch-size", default=1000000, type=int, dest='epoch_size', help="epoch size.")
-  parser.add_argument("--num-epochs-to-adjust-lr", default=500, type=int, dest='num_epochs_to_adjust_lr', help="Number of epochs to adjust learning rate.")
   features.add_argparse_args(parser)
   args = parser.parse_args()
 
@@ -60,20 +58,26 @@ def main():
 
   feature_set = features.get_feature_set_from_name(args.features)
 
+  start_lambda = args.start_lambda or args.lambda_
+  end_lambda = args.end_lambda or args.lambda_
+  max_epoch = args.max_epochs or 800
   if args.resume_from_model is None:
-    nnue = M.NNUE(feature_set=feature_set, lambda_=args.lambda_, gamma=args.gamma, lr=args.lr, label_smoothing_eps=args.label_smoothing_eps, num_batches_warmup=args.num_batches_warmup, newbob_decay=args.newbob_decay, num_epochs_to_adjust_lr=args.num_epochs_to_adjust_lr)
+    nnue = M.NNUE(feature_set=feature_set,
+      start_lambda=start_lambda,
+      max_epoch=max_epoch,
+      end_lambda=end_lambda,
+      gamma=args.gamma,
+      lr=args.lr)
   else:
     nnue = torch.load(args.resume_from_model)
     nnue.set_feature_set(feature_set)
-    nnue.lambda_ = args.lambda_
+    nnue.start_lambda = start_lambda
+    nnue.end_lambda = end_lambda
+    nnue.max_epoch = max_epoch
     # we can set the following here just like that because when resuming
     # from .pt the optimizer is only created after the training is started
     nnue.gamma = args.gamma
     nnue.lr = args.lr
-    nnue.label_smoothing_eps = args.label_smoothing_eps
-    nnue.num_batches_warmup = args.num_batches_warmup
-    nnue.newbob_decay = args.newbob_decay
-    nnue.num_epochs_to_adjust_lr = args.num_epochs_to_adjust_lr
 
   print("Feature set: {}".format(feature_set.name))
   print("Num real features: {}".format(feature_set.num_real_features))

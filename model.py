@@ -7,9 +7,12 @@ import pytorch_lightning as pl
 import sys
 
 # 3 layer fully connected network
-L1 = 1024
-L2 = 8
+L1 = 256
+L2 = 32
 L3 = 32
+
+def get_parameters(layers):
+  return [p for layer in layers for p in layer.parameters()]
 
 class NNUE(pl.LightningModule):
   """
@@ -20,24 +23,22 @@ class NNUE(pl.LightningModule):
 
   It is not ideal for training a Pytorch quantized model directly.
   """
-  def __init__(self, feature_set, lambda_=1.0, gamma=0.992, lr=8.75e-4, label_smoothing_eps=0.0, num_batches_warmup=100000000//16384, newbob_decay=0.5, num_epochs_to_adjust_lr=500):
+  def __init__(self, feature_set, start_lambda=1.0, end_lambda=1.0, max_epoch=800, gamma=0.992, lr=8.75e-4):
     super(NNUE, self).__init__()
-    self.input = nn.Linear(feature_set.num_features, L1)
+    self.input = nn.Linear(feature_set.num_features, L1 // 2)
     self.feature_set = feature_set
     self.l1 = nn.Linear(2 * L1, L2)
     self.l2 = nn.Linear(L2, L3)
     self.output = nn.Linear(L3, 1)
-    self.lambda_ = lambda_
+    self.start_lambda = start_lambda
+    self.end_lambda = end_lambda
     self.gamma = gamma
     self.lr = lr
-    self.label_smoothing_eps = label_smoothing_eps
-    self.num_batches_warmup = num_batches_warmup
-    self.newbob_scale = 1.0
-    self.newbob_decay = newbob_decay
-    self.best_loss = 1e10
-    self.num_epochs_to_adjust_lr = num_epochs_to_adjust_lr
-    self.latest_loss_sum = 0.0
-    self.latest_loss_count = 0
+    self.nnue2score = 600.0
+    self.weight_scale_hidden = 64.0
+    self.weight_scale_out = 16.0
+    self.quantized_one = 127.0
+    self.max_epoch = max_epoch
 
     self._zero_virtual_feature_weights()
 
@@ -55,6 +56,36 @@ class NNUE(pl.LightningModule):
       for a, b in self.feature_set.get_virtual_feature_ranges():
         weights[:, a:b] = 0.0
     self.input.weight = nn.Parameter(weights)
+
+  '''
+  Clips the weights of the model based on the min/max values allowed
+  by the quantization scheme.
+  '''
+  def _clip_weights(self):
+    for group in self.weight_clipping:
+      for p in group['params']:
+        if 'min_weight' in group or 'max_weight' in group:
+          p_data_fp32 = p.data
+          min_weight = group['min_weight']
+          max_weight = group['max_weight']
+          if 'virtual_params' in group:
+            virtual_params = group['virtual_params']
+            xs = p_data_fp32.shape[0] // virtual_params.shape[0]
+            ys = p_data_fp32.shape[1] // virtual_params.shape[1]
+            expanded_virtual_layer = virtual_params.repeat(xs, ys)
+            if min_weight is not None:
+              min_weight_t = p_data_fp32.new_full(p_data_fp32.shape, min_weight) - expanded_virtual_layer
+              p_data_fp32 = torch.max(p_data_fp32, min_weight_t)
+            if max_weight is not None:
+              max_weight_t = p_data_fp32.new_full(p_data_fp32.shape, max_weight) - expanded_virtual_layer
+              p_data_fp32 = torch.min(p_data_fp32, max_weight_t)
+          else:
+            if min_weight is not None and max_weight is not None:
+              p_data_fp32.clamp_(min_weight, max_weight)
+            else:
+              raise Exception('Not supported.')
+          p.data.copy_(p_data_fp32)
+
 
   '''
   This method attempts to convert the model from using the self.feature_set
@@ -107,25 +138,30 @@ class NNUE(pl.LightningModule):
     return x
 
   def step_(self, batch, batch_idx, loss_type):
+    self._clip_weights()
     us, them, white, black, outcome, score = batch
 
-    # 600 is the kPonanzaConstant scaling factor needed to convert the training net output to a score.
-    # This needs to match the value used in the serializer
-    nnue2score = 600
-    scaling = 361
+    # convert the network and search scores to an estimate match result
+    # based on the win_rate_model, with scalings and offsets optimized
+    in_scaling = 240
+    out_scaling = 280
+    offset = 270
 
-    q = self(us, them, white, black) * nnue2score / scaling
-    t = outcome * (1.0 - self.label_smoothing_eps * 2.0) + self.label_smoothing_eps
-    p = (score / scaling).sigmoid()
+    scorenet = self(us, them, white, black) * self.nnue2score
+    q  = ( scorenet - offset) / in_scaling  # used to compute the chance of a win
+    qm = (-scorenet - offset) / in_scaling  # used to compute the chance of a loss
+    qf = 0.5 * (1.0 + q.sigmoid() - qm.sigmoid())  # estimated match result (using win, loss and draw probs).
 
-    epsilon = 1e-12
-    teacher_entropy = -(p * (p + epsilon).log() + (1.0 - p) * (1.0 - p + epsilon).log())
-    outcome_entropy = -(t * (t + epsilon).log() + (1.0 - t) * (1.0 - t + epsilon).log())
-    teacher_loss = -(p * F.logsigmoid(q) + (1.0 - p) * F.logsigmoid(-q))
-    outcome_loss = -(t * F.logsigmoid(q) + (1.0 - t) * F.logsigmoid(-q))
-    result  = self.lambda_ * teacher_loss    + (1.0 - self.lambda_) * outcome_loss
-    entropy = self.lambda_ * teacher_entropy + (1.0 - self.lambda_) * outcome_entropy
-    loss = result.mean() - entropy.mean()
+    p  = ( score - offset) / out_scaling
+    pm = (-score - offset) / out_scaling
+    pf = 0.5 * (1.0 + p.sigmoid() - pm.sigmoid())
+
+    t = outcome
+    actual_lambda = self.start_lambda + (self.end_lambda - self.start_lambda) * (self.current_epoch / self.max_epoch)
+    pt = pf * actual_lambda + t * (1.0 - actual_lambda)
+
+    loss = torch.pow(torch.abs(pt - qf), 2.5).mean()
+
     self.log(loss_type, loss)
     return loss
 
@@ -138,54 +174,31 @@ class NNUE(pl.LightningModule):
     return self.step_(batch, batch_idx, 'train_loss')
 
   def validation_step(self, batch, batch_idx):
-    return self.step_(batch, batch_idx, 'val_loss')
-
-  def validation_epoch_end(self, outputs):
-    self.latest_loss_sum += sum(outputs) / len(outputs);
-    self.latest_loss_count += 1
-
-    if self.newbob_decay != 1.0 and self.current_epoch > 0 and self.current_epoch % self.num_epochs_to_adjust_lr == 0:
-      latest_loss = self.latest_loss_sum / self.latest_loss_count
-      self.latest_loss_sum = 0.0
-      self.latest_loss_count = 0
-      if latest_loss < self.best_loss:
-        self.print(f"{self.current_epoch=}, {latest_loss=} < {self.best_loss=}, accepted, {self.newbob_scale=}")
-        sys.stdout.flush()
-        self.best_loss = latest_loss
-      else:
-        self.newbob_scale *= self.newbob_decay
-        self.print(f"{self.current_epoch=}, {latest_loss=} >= {self.best_loss=}, rejected, {self.newbob_scale=}")
-        sys.stdout.flush()
+    self.step_(batch, batch_idx, 'val_loss')
 
   def test_step(self, batch, batch_idx):
     self.step_(batch, batch_idx, 'test_loss')
 
-  # learning rate warm-up
-  def optimizer_step(
-      self,
-      epoch,
-      batch_idx,
-      optimizer,
-      optimizer_idx,
-      optimizer_closure,
-      on_tpu,
-      using_native_amp,
-      using_lbfgs,
-  ):
-    # update params
-    optimizer.step(closure=optimizer_closure)
-
-    # manually warm up lr without a scheduler
-    if self.trainer.global_step < self.num_batches_warmup:
-      warmup_scale = min(1.0, float(self.trainer.global_step + 1) / self.num_batches_warmup)
-    else:
-      warmup_scale = 1.0
-    for pg in optimizer.param_groups:
-      pg["lr"] = self.lr * warmup_scale * self.newbob_scale
-      self.log("lr", pg["lr"])
-
   def configure_optimizers(self):
-    return torch.optim.SGD(self.parameters(), lr=self.lr)
+    LR = self.lr
+    train_params = [
+      {"params": get_parameters([self.input]), "lr": LR, "gc_dim": 0},
+      {"params": [self.l1.weight], "lr": LR},
+      {"params": [self.l1.bias], "lr": LR},
+      {"params": [self.l2.weight], "lr": LR},
+      {"params": [self.l2.bias], "lr": LR},
+      {"params": [self.output.weight], "lr": LR},
+      {"params": [self.output.bias], "lr": LR},
+    ]
+    # Increasing the eps leads to less saturated nets with a few dead neurons.
+    # Gradient localisation appears slightly harmful.
+    optimizer = ranger.Ranger(
+      train_params, betas=(0.9, 0.999), eps=1.0e-7, gc_loc=False, use_gc=False
+    )
+    scheduler = torch.optim.lr_scheduler.StepLR(
+      optimizer, step_size=1, gamma=self.gamma
+    )
+    return [optimizer], [scheduler]
 
   def get_layers(self, filt):
     """
