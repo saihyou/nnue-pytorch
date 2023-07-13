@@ -25,7 +25,7 @@ class NNUE(pl.LightningModule):
   """
   def __init__(self, feature_set, start_lambda=1.0, end_lambda=1.0, max_epoch=800, gamma=0.992, lr=8.75e-4):
     super(NNUE, self).__init__()
-    self.input = nn.Linear(feature_set.num_features, L1 // 2)
+    self.input = nn.Linear(feature_set.num_features, L1)
     self.feature_set = feature_set
     self.l1 = nn.Linear(2 * L1, L2)
     self.l2 = nn.Linear(L2, L3)
@@ -39,6 +39,14 @@ class NNUE(pl.LightningModule):
     self.weight_scale_out = 16.0
     self.quantized_one = 127.0
     self.max_epoch = max_epoch
+  
+    max_hidden_weight = self.quantized_one / self.weight_scale_hidden
+    max_out_weight = (self.quantized_one * self.quantized_one) / (self.nnue2score * self.weight_scale_out)
+    self.weight_clipping = [
+      {'params' : [self.l1.weight], 'min_weight' : -max_hidden_weight, 'max_weight' : max_hidden_weight },
+      {'params' : [self.l2.weight], 'min_weight' : -max_hidden_weight, 'max_weight' : max_hidden_weight },
+      {'params' : [self.output.weight], 'min_weight' : -max_out_weight, 'max_weight' : max_out_weight },
+    ]
 
     self._zero_virtual_feature_weights()
 

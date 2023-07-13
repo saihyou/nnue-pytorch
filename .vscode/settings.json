@@ -64,5 +64,6 @@
     "variant": "cpp"
   },
   "python.formatting.provider": "none",
-  "C_Cpp.formatting": "disabled"
+  "editor.formatOnSave": false,
+  "C_Cpp.formatting": "disabled",
 }
