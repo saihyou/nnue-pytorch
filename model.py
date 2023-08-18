@@ -7,8 +7,8 @@ import pytorch_lightning as pl
 import sys
 
 # 3 layer fully connected network
-L1 = 256
-L2 = 32
+L1 = 512
+L2 = 8
 L3 = 32
 
 def get_parameters(layers):
@@ -28,7 +28,7 @@ class NNUE(pl.LightningModule):
     self.input = nn.Linear(feature_set.num_features, L1)
     self.feature_set = feature_set
     self.l1 = nn.Linear(2 * L1, L2)
-    self.l2 = nn.Linear(L2, L3)
+    self.l2 = nn.Linear(L2 * 2, L3)
     self.output = nn.Linear(L3, 1)
     self.start_lambda = start_lambda
     self.end_lambda = end_lambda
@@ -140,7 +140,8 @@ class NNUE(pl.LightningModule):
     l0_ = (us * torch.cat([w, b], dim=1)) + (them * torch.cat([b, w], dim=1))
     # clamp here is used as a clipped relu to (0.0, 1.0)
     l0_ = torch.clamp(l0_, 0.0, 1.0)
-    l1_ = torch.clamp(self.l1(l0_), 0.0, 1.0)
+    l1x_ = self.l1(l0_)
+    l1_ = torch.clamp(torch.cat([torch.pow(l1x_, 2.0) * (127/128), l1x_], dim=1), 0.0, 1.0)
     l2_ = torch.clamp(self.l2(l1_), 0.0, 1.0)
     x = self.output(l2_)
     return x
