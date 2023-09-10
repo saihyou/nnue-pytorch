@@ -83,16 +83,22 @@ class NNUEWriter():
     # int16 bias = round(x * 127)
     # int16 weight = round(x * 127)
     layer = model.input
-    bias = layer.bias.data
-    bias = bias.mul(127).round().to(torch.int16)
+    bias = layer.bias.data[:M.L1]
+    bias = bias.mul(model.quantized_one).round().to(torch.int16)
     ascii_hist('ft bias:', bias.numpy())
     self.buf.extend(bias.flatten().numpy().tobytes())
 
-    weight = self.coalesce_ft_weights(model, layer)
-    weight = weight.mul(127).round().to(torch.int16)
+    all_weight = self.coalesce_ft_weights(model, layer)
+    weight = all_weight[:M.L1]
+    psqt_weight = all_weight[M.L1:]
+    weight = weight.mul(model.quantized_one).round().to(torch.int16)
+    psqt_weight = psqt_weight.mul(model.nnue2score * model.weight_scale_out).round().to(torch.int32)
     ascii_hist('ft weight:', weight.numpy())
+    ascii_hist('ft psqt weight:', psqt_weight.numpy())
+  
     # weights stored as [41024][256], so we need to transpose the pytorch [256][41024]
     self.buf.extend(weight.transpose(0, 1).flatten().numpy().tobytes())
+    self.buf.extend(psqt_weight.transpose(0, 1).flatten().numpy().tobytes())
 
   def write_fc_layer(self, layer, is_output=False):
     # FC layers are stored as int8 weights, and int32 biases

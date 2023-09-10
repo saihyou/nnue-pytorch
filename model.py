@@ -25,9 +25,9 @@ class NNUE(pl.LightningModule):
   """
   def __init__(self, feature_set, start_lambda=1.0, end_lambda=1.0, max_epoch=800, gamma=0.992, lr=8.75e-4):
     super(NNUE, self).__init__()
-    self.input = nn.Linear(feature_set.num_features, L1)
+    self.input = nn.Linear(feature_set.num_features, L1 + 1)
     self.feature_set = feature_set
-    self.l1 = nn.Linear(2 * L1, L2)
+    self.l1 = nn.Linear(L1 * 2, L2)
     self.l2 = nn.Linear(L2 * 2, L3)
     self.output = nn.Linear(L3, 1)
     self.start_lambda = start_lambda
@@ -49,6 +49,24 @@ class NNUE(pl.LightningModule):
     ]
 
     self._zero_virtual_feature_weights()
+    self._correct_init_biases()
+    self._init_psqt()
+
+def _correct_init_biases(self):
+    input_bias = self.input.bias
+    l1_bias = self.l1.bias
+    l2_bias = self.l2.bias
+    output_bias = self.output.bias
+    with torch.no_grad():
+      input_bias.add_(0.5)
+      input_bias[L1] = 0.0
+      l1_bias.add_(0.5)
+      l2_bias.add_(0.5)
+      output_bias.fill_(0.0)
+    self.input.bias = nn.Parameter(input_bias)
+    self.l1.bias = nn.Parameter(l1_bias)
+    self.l2.bias = nn.Parameter(l2_bias)
+    self.output.bias = nn.Parameter(output_bias)
 
   '''
   We zero all virtual feature weights because during serialization to .nnue
@@ -64,6 +82,23 @@ class NNUE(pl.LightningModule):
       for a, b in self.feature_set.get_virtual_feature_ranges():
         weights[:, a:b] = 0.0
     self.input.weight = nn.Parameter(weights)
+
+  def _init_psqt(self):
+    input_weights = self.input.weight
+    input_bias = self.input.bias
+    # 1.0 / kPonanzaConstant
+    scale = 1 / self.nnue2score
+    with torch.no_grad():
+      initial_values = self.feature_set.get_initial_psqt_features()
+      assert len(initial_values) == self.feature_set.num_features
+      input_weights[L1, :] = torch.FloatTensor(initial_values) * scale
+      # Bias doesn't matter because it cancels out during
+      # inference during perspective averaging. We set it to 0
+      # just for the sake of it. It might still diverge away from 0
+      # due to gradient imprecision but it won't change anything.
+      input_bias[L1] = 0.0
+    self.input.weight = nn.Parameter(input_weights)
+    self.input.bias = nn.Parameter(input_bias)
 
   '''
   Clips the weights of the model based on the min/max values allowed
@@ -135,15 +170,17 @@ class NNUE(pl.LightningModule):
       raise Exception('Cannot change feature set from {} to {}.'.format(self.feature_set.name, new_feature_set.name))
 
   def forward(self, us, them, w_in, b_in):
-    w = self.input(w_in)
-    b = self.input(b_in)
+    wp = self.input(w_in)
+    bp = self.input(b_in)
+    w, wpsqt = torch.split(wp, L1, dim=1)
+    b, bpsqt = torch.split(bp, L1, dim=1)
     l0_ = (us * torch.cat([w, b], dim=1)) + (them * torch.cat([b, w], dim=1))
     # clamp here is used as a clipped relu to (0.0, 1.0)
     l0_ = torch.clamp(l0_, 0.0, 1.0)
     l1x_ = self.l1(l0_)
     l1_ = torch.clamp(torch.cat([torch.pow(l1x_, 2.0) * (127/128), l1x_], dim=1), 0.0, 1.0)
     l2_ = torch.clamp(self.l2(l1_), 0.0, 1.0)
-    x = self.output(l2_)
+    x = self.output(l2_)  + (wpsqt - bpsqt) * (us - 0.5)
     return x
 
   def step_(self, batch, batch_idx, loss_type):
