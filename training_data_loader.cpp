@@ -288,6 +288,131 @@ struct HalfKAFactorized {
     }
 };
 
+inline Square GetSquareFromBonaPiece(Eval::BonaPiece p) {
+  if (p < Eval::fe_hand_end) {
+    return SQ_NB;
+  }
+  return static_cast<Square>((p - Eval::fe_hand_end) % SQ_NB);
+}
+
+inline int GetEffectCount(const Position& pos, Square sq_p, Color perspective_org, Color perspective) {
+  if (sq_p == SQ_NB) {
+    return 0;
+  }
+  auto sq = sq_p;
+  if (perspective_org == Color::WHITE) {
+    sq = Inv(sq_p);
+  }
+  return pos.board_effect[perspective].effect(sq) > 0 ? 1 : 0;
+}
+
+struct HalfKAE {
+    static constexpr int NUM_SQ = 81;
+    static constexpr int NUM_PLANES = 1548 + 81 * 2;
+    static constexpr int INPUTS = NUM_PLANES * NUM_SQ + (NUM_PLANES - 90) * NUM_SQ * 3;
+    static constexpr int MAX_ACTIVE_FEATURES = 40 + 40;
+
+     static int fill_features_sparse(int i, const TrainingDataEntry& e, int* features, float* values, int& counter, Color color)
+     {
+        auto& pos = *e.pos;
+        Eval::BonaPiece* pieces = nullptr;
+        if (color == Color::BLACK) {
+            pieces = pos.eval_list()->piece_list_fb();
+        }
+        else {
+            pieces = pos.eval_list()->piece_list_fw();
+        }
+        PieceNumber target = static_cast<PieceNumber>(PIECE_NUMBER_KING + color);
+        auto sq_target_k = static_cast<Square>((pieces[target] - Eval::BonaPiece::f_king) % SQ_NB);
+
+        // We order the features so that the resulting sparse
+        // tensor is coalesced.
+        int features_unordered[40];
+        int features_noeffect[40];
+        for (PieceNumber i = PIECE_NUMBER_ZERO; i < PIECE_NUMBER_NB; ++i) {
+            auto p = pieces[i];
+            auto sq = GetSquareFromBonaPiece(p);
+            auto effect = GetEffectCount(pos, sq, color, color) << 1 | GetEffectCount(pos, sq, color, ~color);
+            features_unordered[i] = static_cast<int>(Eval::fe_end2) * static_cast<int>(sq_target_k) + p 
+                + static_cast<int>(Eval::fe_end2 - Eval::fe_hand_end) * static_cast<int>(SQ_NB) * effect;
+            features_noeffect[i] = static_cast<int>(Eval::fe_end2) * static_cast<int>(sq_target_k) + p;
+        }
+        std::sort(features_unordered, features_unordered + PIECE_NUMBER_NB);
+        for (int k = 0; k < PIECE_NUMBER_NB; ++k) {
+            int idx = counter * 2;
+            features[idx] = i;
+            features[idx + 1] = features_unordered[k];
+            values[counter] = 1.0f;
+            counter += 1;
+        }
+        std::sort(features_noeffect, features_noeffect + PIECE_NUMBER_NB);
+        for (int k = 0; k < PIECE_NUMBER_NB; ++k) {
+            int idx = counter * 2;
+            features[idx] = i;
+            features[idx + 1] = INPUTS + features_noeffect[k];
+            values[counter] = 1.0f;
+            counter += 1;
+        }
+        return INPUTS + HalfKA::INPUTS;
+    }
+};
+
+struct HalfKAEFactorized {
+    // Factorized features
+    static constexpr int PIECE_INPUTS = HalfKA::NUM_PLANES ;
+    static constexpr int NUN_PIECE_KINDS = (Eval::fe_end2 - Eval::fe_hand_end) / 81;
+    static constexpr int REL_INPUTS = NUN_PIECE_KINDS * 17 * 17 + Eval::fe_hand_end;
+    static constexpr int INPUTS = HalfKAE::INPUTS + PIECE_INPUTS + REL_INPUTS;
+
+    static constexpr int MAX_PIECE_FEATURES = 40;
+    static constexpr int MAX_ACTIVE_FEATURES = HalfKAE::MAX_ACTIVE_FEATURES + MAX_PIECE_FEATURES + MAX_PIECE_FEATURES;
+
+    static void fill_features_sparse(int i, const TrainingDataEntry& e, int* features, float* values, int& counter, Color color)
+    {
+        auto counter_before = counter;
+        int offset = HalfKAE::fill_features_sparse(i, e, features, values, counter, color);
+
+        auto& pos = *e.pos;
+        Eval::BonaPiece* pieces = nullptr;
+        if (color == Color::BLACK) {
+            pieces = pos.eval_list()->piece_list_fb();
+        } else {
+            pieces = pos.eval_list()->piece_list_fw();
+        }
+        PieceNumber target = static_cast<PieceNumber>(PIECE_NUMBER_KING + color);
+        auto sq_target_k = static_cast<Square>((pieces[target] - Eval::BonaPiece::f_king) % SQ_NB);
+        int rel_offset = offset + PIECE_INPUTS;
+        // We order the features so that the resulting sparse
+        // tensor is coalesced. Note that we can just sort
+        // the parts where values are all 1.0f and leave the
+        // halfk feature where it was.
+        int features_unordered[40];
+        int rel_features[40];
+        for (PieceNumber j = PIECE_NUMBER_ZERO; j < PIECE_NUMBER_NB; ++j) {
+            auto p = pieces[j];
+            features_unordered[j] = offset + p;
+            rel_features[j] = rel_offset + make_relkp_index(sq_target_k, p);
+        }
+        std::sort(features_unordered, features_unordered + PIECE_NUMBER_NB);
+        for (int k = 0; k < PIECE_NUMBER_NB; ++k) {
+            int idx = counter * 2;
+            features[idx] = i;
+            features[idx + 1] = features_unordered[k];
+            values[counter] = 1.0f;
+            counter += 1;
+        }
+
+        std::sort(rel_features, rel_features + PIECE_NUMBER_NB);
+        for (int k = 0; k < PIECE_NUMBER_NB; ++k) {
+            int idx = counter * 2;
+            features[idx] = i;
+            features[idx + 1] = rel_features[k];
+            values[counter] = 1.0f;
+            counter += 1;
+        }
+    }
+};
+
 template <typename T, typename... Ts>
 struct FeatureSet
 {
@@ -657,6 +782,14 @@ extern "C" {
         else if (feature_set == "HalfKA^")
         {
             return new FeaturedBatchStream<FeatureSet<HalfKAFactorized>, SparseBatch>(concurrency, filename, batch_size, cyclic, skipPredicate);
+        }
+        else if (feature_set == "HalfKAE")
+        {
+            return new FeaturedBatchStream<FeatureSet<HalfKAE>, SparseBatch>(concurrency, filename, batch_size, cyclic, skipPredicate);
+        }
+        else if (feature_set == "HalfKAE^")
+        {
+            return new FeaturedBatchStream<FeatureSet<HalfKAEFactorized>, SparseBatch>(concurrency, filename, batch_size, cyclic, skipPredicate);
         }
         fprintf(stderr, "Unknown feature_set %s\n", feature_set_c);
         return nullptr;
