@@ -69,7 +69,7 @@ class FactorizedFeatures(FeatureBlock):
       relative_rank = (sq_p % 9) - (sq_k % 9) + (h // 2)
       return int(h * w * piece_index + h * relative_file + relative_rank + 90)
 
-    return [idx, self.get_factor_base_feature('HalfK') + k_idx, self.get_factor_base_feature('P') + p_idx, self.get_factor_base_feature('HalfRelKP') + _make_relkp_index(k_idx, idx)]
+    return [idx, self.get_factor_base_feature('HalfK') + k_idx, self.get_factor_base_feature('P') + p_idx, self.get_factor_base_feature('HalfRelKP') + _make_relkp_index(k_idx, p_idx)]
 
 '''
 This is used by the features module for discovery of feature blocks.

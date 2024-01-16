@@ -48,6 +48,9 @@ def main():
   parser.add_argument("--random-fen-skipping", default=0, type=int, dest='random_fen_skipping', help="skip fens randomly on average random_fen_skipping before using one.")
   parser.add_argument("--resume-from-model", dest='resume_from_model', help="Initializes training using the weights from the given .pt model")
   parser.add_argument("--epoch-size", default=1000000, type=int, dest='epoch_size', help="epoch size.")
+  parser.add_argument("--in-scaling", default=240, type=int, dest='in_scaling', help="in-scaling.")
+  parser.add_argument("--out-scaling", default=280, type=int, dest='out_scaling', help="out-scaling.")
+  parser.add_argument("--offset", default=270, type=int, dest='offset', help="offset.")
   features.add_argparse_args(parser)
   args = parser.parse_args()
 
@@ -67,7 +70,12 @@ def main():
       max_epoch=max_epoch,
       end_lambda=end_lambda,
       gamma=args.gamma,
-      lr=args.lr)
+      lr=args.lr,
+      epoch_size=args.epoch_size,
+      batch_size=args.batch_size,
+      in_scaling=args.in_scaling,
+      out_scaling=args.out_scaling,
+      offset=args.offset)
   else:
     nnue = torch.load(args.resume_from_model)
     nnue.set_feature_set(feature_set)

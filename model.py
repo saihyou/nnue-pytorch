@@ -1,5 +1,6 @@
 import chess
 import ranger
+import ranger21
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -7,7 +8,7 @@ import pytorch_lightning as pl
 import sys
 
 # 3 layer fully connected network
-L1 = 512
+L1 = 1024
 L2 = 8
 L3 = 32
 
@@ -23,11 +24,11 @@ class NNUE(pl.LightningModule):
 
   It is not ideal for training a Pytorch quantized model directly.
   """
-  def __init__(self, feature_set, start_lambda=1.0, end_lambda=1.0, max_epoch=800, gamma=0.992, lr=8.75e-4):
+  def __init__(self, feature_set, start_lambda=1.0, end_lambda=1.0, max_epoch=800, gamma=0.992, lr=8.75e-4, epoch_size=100_000_000, batch_size=16384, in_scaling=240, out_scaling=280, offset=270):
     super(NNUE, self).__init__()
     self.input = nn.Linear(feature_set.num_features, L1)
     self.feature_set = feature_set
-    self.l1 = nn.Linear(2 * L1, L2)
+    self.l1 = nn.Linear(L1, L2)
     self.l2 = nn.Linear(L2 * 2, L3)
     self.output = nn.Linear(L3, 1)
     self.start_lambda = start_lambda
@@ -39,6 +40,11 @@ class NNUE(pl.LightningModule):
     self.weight_scale_out = 16.0
     self.quantized_one = 127.0
     self.max_epoch = max_epoch
+    self.epoch_size = epoch_size
+    self.batch_size = batch_size
+    self.in_scaling = in_scaling
+    self.out_scaling = out_scaling
+    self.offset = offset
   
     max_hidden_weight = self.quantized_one / self.weight_scale_hidden
     max_out_weight = (self.quantized_one * self.quantized_one) / (self.nnue2score * self.weight_scale_out)
@@ -140,6 +146,11 @@ class NNUE(pl.LightningModule):
     l0_ = (us * torch.cat([w, b], dim=1)) + (them * torch.cat([b, w], dim=1))
     # clamp here is used as a clipped relu to (0.0, 1.0)
     l0_ = torch.clamp(l0_, 0.0, 1.0)
+    l0_s = torch.split(l0_, L1 // 2, dim=1)
+    l0_s1 = [l0_s[0] * l0_s[1], l0_s[2] * l0_s[3]]
+    # We multiply by 127/128 because in the quantized network 1.0 is represented by 127
+    # and it's more efficient to divide by 128 instead.
+    l0_ = torch.cat(l0_s1, dim=1) * (127/128)
     l1x_ = self.l1(l0_)
     l1_ = torch.clamp(torch.cat([torch.pow(l1x_, 2.0) * (127/128), l1x_], dim=1), 0.0, 1.0)
     l2_ = torch.clamp(self.l2(l1_), 0.0, 1.0)
@@ -152,9 +163,9 @@ class NNUE(pl.LightningModule):
 
     # convert the network and search scores to an estimate match result
     # based on the win_rate_model, with scalings and offsets optimized
-    in_scaling = 240
-    out_scaling = 280
-    offset = 270
+    in_scaling = self.in_scaling
+    out_scaling = self.out_scaling
+    offset = self.offset
 
     scorenet = self(us, them, white, black) * self.nnue2score
     q  = ( scorenet - offset) / in_scaling  # used to compute the chance of a win
@@ -170,6 +181,8 @@ class NNUE(pl.LightningModule):
     pt = pf * actual_lambda + t * (1.0 - actual_lambda)
 
     loss = torch.pow(torch.abs(pt - qf), 2.5).mean()
+    loss = loss * ((qf > pt) * 0.1 + 1)
+    loss = loss.mean()
 
     self.log(loss_type, loss)
     return loss
@@ -201,9 +214,18 @@ class NNUE(pl.LightningModule):
     ]
     # Increasing the eps leads to less saturated nets with a few dead neurons.
     # Gradient localisation appears slightly harmful.
-    optimizer = ranger.Ranger(
-      train_params, betas=(0.9, 0.999), eps=1.0e-7, gc_loc=False, use_gc=False
-    )
+    #optimizer = ranger.Ranger(
+    #  train_params, betas=(0.9, 0.999), eps=1.0e-7, gc_loc=False, use_gc=False
+    #)
+    optimizer = ranger21.Ranger21(train_params,
+      lr=1.0, betas=(.9, 0.999), eps=1.0e-7,
+      using_gc=False, using_normgc=False,
+      weight_decay=0.0,
+      num_batches_per_epoch=int(self.epoch_size / self.batch_size), num_epochs=self.max_epoch,
+      warmdown_active=False, use_warmup=False,
+      use_adaptive_gradient_clipping=False,
+      softplus=False,
+      pnm_momentum_factor=0.0)
     scheduler = torch.optim.lr_scheduler.StepLR(
       optimizer, step_size=1, gamma=self.gamma
     )
