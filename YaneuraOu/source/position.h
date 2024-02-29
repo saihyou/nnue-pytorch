@@ -526,6 +526,20 @@ public:
 
 #endif
 
+	int stack_index() const {
+		constexpr int kIndexTable[] = {
+			7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
+			6, 6, 
+			5, 5, 5,
+			4, 4,
+			3, 3,
+			2, 2, 2, 2,
+			1, 1, 1, 1, 1,
+			0, 0, 0, 0, 0, 0, 0, 0
+		};
+		return kIndexTable[((byColorBB[BLACK] & enemy_field(WHITE)) | (byColorBB[WHITE] & enemy_field(BLACK))).pop_count()];
+	}
+
 	// --- Accessing hash keys
 
 	// StateInfo::key()への簡易アクセス。

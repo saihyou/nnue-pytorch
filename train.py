@@ -79,6 +79,9 @@ def main():
   else:
     nnue = torch.load(args.resume_from_model)
     nnue.set_feature_set(feature_set)
+    nnue.in_scaling = args.in_scaling
+    nnue.out_scaling = args.out_scaling
+    nnue.offset = args.offset
     nnue.start_lambda = start_lambda
     nnue.end_lambda = end_lambda
     nnue.max_epoch = max_epoch
