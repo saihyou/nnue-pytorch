@@ -37,10 +37,11 @@ class NNUEWriter():
     self.write_header(model, fc_hash)
     self.int32(model.feature_set.hash ^ (M.L1*2)) # Feature transformer hash
     self.write_feature_transformer(model)
-    self.int32(fc_hash) # FC layers hash
-    self.write_fc_layer(model.l1)
-    self.write_fc_layer(model.l2)
-    self.write_fc_layer(model.output, is_output=True)
+    for l1, l2, output in model.layer_stacks.get_coalesced_layer_stacks():
+      self.int32(fc_hash) # FC layers hash
+      self.write_fc_layer(model, l1)
+      self.write_fc_layer(model, l2)
+      self.write_fc_layer(model, output, is_output=True)
 
   @staticmethod
   def fc_hash(model):
@@ -49,13 +50,13 @@ class NNUEWriter():
     prev_hash ^= (M.L1 * 2)
 
     # Fully connected layers
-    layers = [model.l1, model.l2, model.output]
+    layers = [model.layer_stacks.l1, model.layer_stacks.l2, model.layer_stacks.output]
     for layer in layers:
       layer_hash = 0xCC03DAE4
-      layer_hash += layer.out_features
+      layer_hash += layer.out_features // model.num_ls_buckets
       layer_hash ^= prev_hash >> 1
       layer_hash ^= (prev_hash << 31) & 0xFFFFFFFF
-      if layer.out_features != 1:
+      if layer.out_features // model.num_ls_buckets != 1:
         # Clipped ReLU hash
         layer_hash = (layer_hash + 0x538D24C7) & 0xFFFFFFFF
       prev_hash = layer_hash
@@ -141,10 +142,22 @@ class NNUEReader():
     self.read_header(feature_set, fc_hash)
     self.read_int32(feature_set.hash ^ (M.L1*2)) # Feature transformer hash
     self.read_feature_transformer(self.model.input)
-    self.read_int32(fc_hash) # FC layers hash
-    self.read_fc_layer(self.model.l1)
-    self.read_fc_layer(self.model.l2)
-    self.read_fc_layer(self.model.output, is_output=True)
+    for i in range(self.model.num_ls_buckets):
+      l1 = nn.Linear(2*M.L1//2, M.L2)
+      l2 = nn.Linear(M.L2*2, M.L3)
+      output = nn.Linear(M.L3, 1)
+
+      self.read_int32(fc_hash) # FC layers hash
+      self.read_fc_layer(l1)
+      self.read_fc_layer(l2)
+      self.read_fc_layer(output, is_output=True)
+
+      self.model.layer_stacks.l1.weight.data[i*(M.L2):(i+1)*(M.L2), :] = l1.weight
+      self.model.layer_stacks.l1.bias.data[i*(M.L2):(i+1)*(M.L2)] = l1.bias
+      self.model.layer_stacks.l2.weight.data[i*M.L3:(i+1)*M.L3, :] = l2.weight
+      self.model.layer_stacks.l2.bias.data[i*M.L3:(i+1)*M.L3] = l2.bias
+      self.model.layer_stacks.output.weight.data[i:(i+1), :] = output.weight
+      self.model.layer_stacks.output.bias.data[i:(i+1)] = output.bias
 
   def read_header(self, feature_set, fc_hash):
     self.read_int32(VERSION) # version

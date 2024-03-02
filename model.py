@@ -258,7 +258,7 @@ class NNUE(pl.LightningModule):
 
   def step_(self, batch, batch_idx, loss_type):
     self._clip_weights()
-    us, them, white, black, outcome, score = batch
+    us, them, white, black, outcome, score, layer_stack_indices = batch
 
     # convert the network and search scores to an estimate match result
     # based on the win_rate_model, with scalings and offsets optimized
@@ -266,7 +266,7 @@ class NNUE(pl.LightningModule):
     out_scaling = self.out_scaling
     offset = self.offset
 
-    scorenet = self(us, them, white, black) * self.nnue2score
+    scorenet = self(us, them, white, black, layer_stack_indices) * self.nnue2score
     q  = ( scorenet - offset) / in_scaling  # used to compute the chance of a win
     qm = (-scorenet - offset) / in_scaling  # used to compute the chance of a loss
     qf = 0.5 * (1.0 + q.sigmoid() - qm.sigmoid())  # estimated match result (using win, loss and draw probs).
