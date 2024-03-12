@@ -10,6 +10,7 @@
 #include <memory>
 #include <numeric>
 //#include <ppl.h>
+#include <omp.h>
 
 namespace training_data {
 
@@ -131,10 +132,11 @@ namespace training_data {
                             vec[i] = packedSfenValueToTrainingDataEntry(packedSfenValues[i]);
                         });
 #else
-		    for (size_t i = 0; i < n; i++)
-                    {
-                        vec[i] = packedSfenValueToTrainingDataEntry(m_data[m_indexes[m_curr++]]);
+                    #pragma omp parallel for
+                    for (size_t i = 0; i < n; i++) {
+                        vec[i] = packedSfenValueToTrainingDataEntry(m_data[m_indexes[m_curr + i]]);
                     }
+                    m_curr += n;
 #endif
                     return;
                 }

@@ -7,6 +7,8 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 import sys
 
+torch.set_float32_matmul_precision("high")
+
 # 3 layer fully connected network
 L1 = 1024
 L2 = 8
@@ -140,6 +142,7 @@ class NNUE(pl.LightningModule):
     else:
       raise Exception('Cannot change feature set from {} to {}.'.format(self.feature_set.name, new_feature_set.name))
 
+  @torch.compile
   def forward(self, us, them, w_in, b_in):
     w = self.input(w_in)
     b = self.input(b_in)
@@ -156,9 +159,9 @@ class NNUE(pl.LightningModule):
     l2_ = torch.clamp(self.l2(l1_), 0.0, 1.0)
     x = self.output(l2_)
     return x
-
-  def step_(self, batch, batch_idx, loss_type):
-    self._clip_weights()
+  
+  @torch.compile
+  def calc_loss(self, batch):
     us, them, white, black, outcome, score = batch
 
     # convert the network and search scores to an estimate match result
@@ -183,7 +186,12 @@ class NNUE(pl.LightningModule):
     loss = torch.pow(torch.abs(pt - qf), 2.5).mean()
     loss = loss * ((qf > pt) * 0.1 + 1)
     loss = loss.mean()
+    return loss
 
+
+  def step_(self, batch, batch_idx, loss_type):
+    self._clip_weights()
+    loss = self.calc_loss(batch)
     self.log(loss_type, loss)
     return loss
 
