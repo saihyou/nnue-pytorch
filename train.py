@@ -86,6 +86,9 @@ def main():
     # from .pt the optimizer is only created after the training is started
     nnue.gamma = args.gamma
     nnue.lr = args.lr
+    nnue.in_scaling = args.in_scaling
+    nnue.out_scaling = args.out_scaling
+    nnue.offset = args.offset
 
   print("Feature set: {}".format(feature_set.name))
   print("Num real features: {}".format(feature_set.num_real_features))

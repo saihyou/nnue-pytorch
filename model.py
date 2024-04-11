@@ -8,8 +8,8 @@ import pytorch_lightning as pl
 import sys
 
 # 3 layer fully connected network
-L1 = 1024
-L2 = 8
+L1 = 1280
+L2 = 15
 L3 = 32
 
 def get_parameters(layers):
@@ -28,7 +28,7 @@ class NNUE(pl.LightningModule):
     super(NNUE, self).__init__()
     self.input = nn.Linear(feature_set.num_features, L1)
     self.feature_set = feature_set
-    self.l1 = nn.Linear(L1, L2)
+    self.l1 = nn.Linear(L1, L2 + 1)
     self.l2 = nn.Linear(L2 * 2, L3)
     self.output = nn.Linear(L3, 1)
     self.start_lambda = start_lambda
@@ -152,10 +152,11 @@ class NNUE(pl.LightningModule):
     # and it's more efficient to divide by 128 instead.
     l0_ = torch.cat(l0_s1, dim=1) * (127/128)
     l1x_ = self.l1(l0_)
+    l1x_, l1x_out = l1x_.split(L2, dim=1)
     l1_ = torch.clamp(torch.cat([torch.pow(l1x_, 2.0) * (127/128), l1x_], dim=1), 0.0, 1.0)
     l2_ = torch.clamp(self.l2(l1_), 0.0, 1.0)
     x = self.output(l2_)
-    return x
+    return x + l1x_out
 
   def step_(self, batch, batch_idx, loss_type):
     self._clip_weights()
