@@ -24,7 +24,7 @@ class NNUE(pl.LightningModule):
 
   It is not ideal for training a Pytorch quantized model directly.
   """
-  def __init__(self, feature_set, start_lambda=1.0, end_lambda=1.0, max_epoch=800, gamma=0.992, lr=8.75e-4, epoch_size=100_000_000, batch_size=16384, in_scaling=240, out_scaling=280, offset=270):
+  def __init__(self, feature_set, start_lambda=1.0, end_lambda=1.0, max_epoch=800, gamma=0.992, lr=8.75e-4, epoch_size=100_000_000, batch_size=16384, in_scaling=240, out_scaling=280, offset=270, adjust_loss=0.1):
     super(NNUE, self).__init__()
     self.input = nn.Linear(feature_set.num_features, L1)
     self.feature_set = feature_set
@@ -45,6 +45,7 @@ class NNUE(pl.LightningModule):
     self.in_scaling = in_scaling
     self.out_scaling = out_scaling
     self.offset = offset
+    self.adjust_loss = adjust_loss
   
     max_hidden_weight = self.quantized_one / self.weight_scale_hidden
     max_out_weight = (self.quantized_one * self.quantized_one) / (self.nnue2score * self.weight_scale_out)
@@ -182,7 +183,7 @@ class NNUE(pl.LightningModule):
     pt = pf * actual_lambda + t * (1.0 - actual_lambda)
 
     loss = torch.pow(torch.abs(pt - qf), 2.5).mean()
-    loss = loss * ((qf > pt) * 0.1 + 1)
+    loss = loss * ((qf > pt) * self.adjust_loss + 1)
     loss = loss.mean()
 
     self.log(loss_type, loss)
