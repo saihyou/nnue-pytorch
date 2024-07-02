@@ -48,8 +48,8 @@ def main():
   parser.add_argument("--random-fen-skipping", default=0, type=int, dest='random_fen_skipping', help="skip fens randomly on average random_fen_skipping before using one.")
   parser.add_argument("--resume-from-model", dest='resume_from_model', help="Initializes training using the weights from the given .pt model")
   parser.add_argument("--epoch-size", default=1000000, type=int, dest='epoch_size', help="epoch size.")
-  parser.add_argument("--in-scaling", default=240, type=int, dest='in_scaling', help="in-scaling.")
-  parser.add_argument("--out-scaling", default=280, type=int, dest='out_scaling', help="out-scaling.")
+  parser.add_argument("--in-scaling", default=340, type=int, dest='in_scaling', help="in-scaling.")
+  parser.add_argument("--out-scaling", default=380, type=int, dest='out_scaling', help="out-scaling.")
   parser.add_argument("--offset", default=270, type=int, dest='offset', help="offset.")
   features.add_argparse_args(parser)
   args = parser.parse_args()
@@ -86,6 +86,9 @@ def main():
     # from .pt the optimizer is only created after the training is started
     nnue.gamma = args.gamma
     nnue.lr = args.lr
+    nnue.in_scaling = args.in_scaling,
+    nnue.out_scaling = args.out_scaling,
+    nnue.offset = args.offset
 
   print("Feature set: {}".format(feature_set.name))
   print("Num real features: {}".format(feature_set.num_real_features))

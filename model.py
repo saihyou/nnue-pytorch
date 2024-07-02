@@ -8,9 +8,9 @@ import pytorch_lightning as pl
 import sys
 
 # 3 layer fully connected network
-L1 = 1024
+L1 = 1280
 L2 = 8
-L3 = 32
+L3 = 64
 
 def get_parameters(layers):
   return [p for layer in layers for p in layer.parameters()]
@@ -24,7 +24,7 @@ class NNUE(pl.LightningModule):
 
   It is not ideal for training a Pytorch quantized model directly.
   """
-  def __init__(self, feature_set, start_lambda=1.0, end_lambda=1.0, max_epoch=800, gamma=0.992, lr=8.75e-4, epoch_size=100_000_000, batch_size=16384, in_scaling=240, out_scaling=280, offset=270):
+  def __init__(self, feature_set, start_lambda=1.0, end_lambda=1.0, max_epoch=800, gamma=0.992, lr=8.75e-4, epoch_size=100_000_000, batch_size=16384, in_scaling=340, out_scaling=380, offset=270):
     super(NNUE, self).__init__()
     self.input = nn.Linear(feature_set.num_features, L1)
     self.feature_set = feature_set
