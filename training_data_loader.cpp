@@ -322,7 +322,7 @@ struct HalfKAVm {
                 auto piece_index = (p - Eval::fe_hand_end) / SQ_NB;
                 Square sq_p = static_cast<Square>((p - Eval::fe_hand_end) % SQ_NB);
                 sq_p = Mir(sq_p);
-				p = static_cast<Eval::BonaPiece>(Eval::BonaPiece::fe_hand_end + piece_index * static_cast<std::uint32_t>(SQ_NB) + sq_p);
+				p = static_cast<Eval::BonaPiece>(Eval::BonaPiece::fe_hand_end + piece_index * static_cast<std::int32_t>(SQ_NB) + sq_p);
             }
             features_unordered[i] = static_cast<int>(Eval::fe_end2) * static_cast<int>(sq_target_k) + p;
         }
@@ -340,13 +340,13 @@ struct HalfKAVm {
 
 struct HalfKAVmFactorized {
     // Factorized features
-    static constexpr int PIECE_INPUTS = HalfKA::NUM_PLANES;
+    static constexpr int PIECE_INPUTS = HalfKAVm::NUM_PLANES;
     static constexpr int NUN_PIECE_KINDS = (Eval::fe_end2 - Eval::fe_hand_end) / 81;
     static constexpr int REL_INPUTS = NUN_PIECE_KINDS * 17 * 17 + Eval::fe_hand_end;
-    static constexpr int INPUTS = HalfKA::INPUTS + PIECE_INPUTS + REL_INPUTS;
+    static constexpr int INPUTS = HalfKAVm::INPUTS + PIECE_INPUTS + REL_INPUTS;
 
     static constexpr int MAX_PIECE_FEATURES = 40;
-    static constexpr int MAX_ACTIVE_FEATURES = HalfKA::MAX_ACTIVE_FEATURES + MAX_PIECE_FEATURES + MAX_PIECE_FEATURES;
+    static constexpr int MAX_ACTIVE_FEATURES = HalfKAVm::MAX_ACTIVE_FEATURES + MAX_PIECE_FEATURES + MAX_PIECE_FEATURES;
 
     static void fill_features_sparse(int i, const TrainingDataEntry& e, int* features, float* values, int& counter, Color color)
     {
@@ -380,7 +380,7 @@ struct HalfKAVmFactorized {
                 auto piece_index = (p - Eval::fe_hand_end) / SQ_NB;
                 Square sq_p = static_cast<Square>((p - Eval::fe_hand_end) % SQ_NB);
                 sq_p = Mir(sq_p);
-				p = static_cast<Eval::BonaPiece>(Eval::BonaPiece::fe_hand_end + piece_index * static_cast<std::uint32_t>(SQ_NB) + sq_p);
+				p = static_cast<Eval::BonaPiece>(Eval::BonaPiece::fe_hand_end + piece_index * static_cast<std::int32_t>(SQ_NB) + sq_p);
             }
             features_unordered[j] = offset + p;
             rel_features[j] = rel_offset + make_relkp_index(sq_target_k, p);
@@ -720,17 +720,25 @@ extern "C" {
         }
         else if (feature_set == "HalfKA")
         {
-             return new SparseBatch(FeatureSet<HalfKA>{}, entries);
+            return new SparseBatch(FeatureSet<HalfKA>{}, entries);
         }
         else if (feature_set == "HalfKA^")
         {
-             return new SparseBatch(FeatureSet<HalfKAFactorized>{}, entries);
+            return new SparseBatch(FeatureSet<HalfKAFactorized>{}, entries);
+        }
+        else if (feature_set == "HalfKAVm")
+        {
+            return new SparseBatch(FeatureSet<HalfKAVm>{}, entries);
+        }
+        else if (feature_set == "HalfKAVm^")
+        {
+            return new SparseBatch(FeatureSet<HalfKAVmFactorized>{}, entries);
         }
         fprintf(stderr, "Unknown feature_set %s\n", feature_set_c);
         return nullptr;
     }
 
-    EXPORT Stream<SparseBatch>* CDECL create_sparse_batch_stream(const char* feature_set_c, int concurrency, const char* filename, int batch_size, bool cyclic, bool filtered, int random_fen_skipping)
+    EXPORT Stream<SparseBatch>* CDECL create_sparse_batch_stream(const char* feature_set_c, int concurrency, const char* filename, int batch_size, int cyclic, int filtered, int random_fen_skipping)
     {
         EnsureInitialize();
 

@@ -51,6 +51,7 @@ def main():
   parser.add_argument("--in-scaling", default=340, type=int, dest='in_scaling', help="in-scaling.")
   parser.add_argument("--out-scaling", default=380, type=int, dest='out_scaling', help="out-scaling.")
   parser.add_argument("--offset", default=270, type=int, dest='offset', help="offset.")
+  parser.add_argument("--adjust-loss", default=0.1, type=float, dest='adjust_loss', help="adjust loss.")
   features.add_argparse_args(parser)
   args = parser.parse_args()
 
@@ -75,7 +76,8 @@ def main():
       batch_size=args.batch_size,
       in_scaling=args.in_scaling,
       out_scaling=args.out_scaling,
-      offset=args.offset)
+      offset=args.offset,
+      adjust_loss=args.adjust_loss)
   else:
     nnue = torch.load(args.resume_from_model)
     nnue.set_feature_set(feature_set)
@@ -86,9 +88,10 @@ def main():
     # from .pt the optimizer is only created after the training is started
     nnue.gamma = args.gamma
     nnue.lr = args.lr
-    nnue.in_scaling = args.in_scaling,
-    nnue.out_scaling = args.out_scaling,
+    nnue.in_scaling = args.in_scaling
+    nnue.out_scaling = args.out_scaling
     nnue.offset = args.offset
+    nnue.adjust_loss = args.adjust_loss
 
   print("Feature set: {}".format(feature_set.name))
   print("Num real features: {}".format(feature_set.num_real_features))

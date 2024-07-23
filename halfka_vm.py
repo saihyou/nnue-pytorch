@@ -21,7 +21,7 @@ def halfka_idx(is_white_pov: bool, king_sq: int, sq: int, p: chess.Piece):
 
 class Features(FeatureBlock):
     def __init__(self):
-        super(Features, self).__init__("HalfKA_vm", 0x7f234cb8, OrderedDict([("HalfKA_vm", NUM_PLANES * NUM_SQ)]))
+        super(Features, self).__init__("HalfKAVm", 0x7f234cb8, OrderedDict([("HalfKAVm", NUM_PLANES * NUM_SQ)]))
 
     def get_active_features(self, board: chess.Board):
         def piece_features(turn):
