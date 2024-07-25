@@ -15,7 +15,7 @@ class Features(FeatureBlock):
             "HalfKAEVm",
             0x5F134CB8,
             OrderedDict(
-                [("HalfKAEVm", NUM_PLANES * NUM_SQ + (NUM_PLANES - 90) * NUM_SQ * 3)]
+                [("HalfKAEVm", NUM_PLANES * NUM_SQ + NUM_PLANES * NUM_SQ * 3)]
             ),
         )
 
@@ -32,7 +32,7 @@ class FactorizedFeatures(FeatureBlock):
             0x5F134CB8,
             OrderedDict(
                 [
-                    ("HalfKAEVm", NUM_PLANES * NUM_SQ + (NUM_PLANES - 90) * NUM_SQ * 3),
+                    ("HalfKAEVm", NUM_PLANES * NUM_SQ + NUM_PLANES * NUM_SQ * 3),
                     ("HalfKAVm", NUM_PLANES * NUM_SQ),
                     ("A", NUM_PLANES_FACT),
                     ("HalfRelKA", REL_FEATURES),

@@ -427,7 +427,7 @@ struct HalfKAEVm {
     static constexpr int NUM_FILE = 9;
     static constexpr int NUM_PLANES = 1548 + 81 * 2;
     static constexpr int NUM_SQ = 9 * 5;
-    static constexpr int INPUTS = NUM_PLANES * NUM_FILE * 5 + (NUM_PLANES - 90) * NUM_SQ * 3;
+    static constexpr int INPUTS = NUM_PLANES * NUM_FILE * 5 + NUM_PLANES * NUM_SQ * 3;
 
     static constexpr int MAX_ACTIVE_FEATURES = 40;
 
@@ -462,7 +462,8 @@ struct HalfKAEVm {
                 sq_p = Mir(sq_p);
 				p = static_cast<Eval::BonaPiece>(Eval::BonaPiece::fe_hand_end + piece_index * static_cast<std::int32_t>(SQ_NB) + sq_p);
             }
-            features_unordered[i] = static_cast<int>(Eval::fe_end2) * static_cast<int>(sq_target_k) + p;
+            features_unordered[i] = static_cast<int>(Eval::fe_end2) * static_cast<int>(sq_target_k) + p 
+                + static_cast<int>(Eval::fe_end2) * static_cast<int>(NUM_SQ) * effect;
         }
         std::sort(features_unordered, features_unordered + PIECE_NUMBER_NB);
         for (int k = 0; k < PIECE_NUMBER_NB; ++k) {
