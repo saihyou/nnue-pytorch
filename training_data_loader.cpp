@@ -482,7 +482,7 @@ struct HalfKAEVmFactorized {
     static constexpr int PIECE_INPUTS = HalfKAEVm::NUM_PLANES;
     static constexpr int NUN_PIECE_KINDS = (Eval::fe_end2 - Eval::fe_hand_end) / 81;
     static constexpr int REL_INPUTS = NUN_PIECE_KINDS * 17 * 17 + Eval::fe_hand_end;
-    static constexpr int INPUTS = HalfKAEVm::INPUTS + PIECE_INPUTS + REL_INPUTS;
+    static constexpr int INPUTS = HalfKAEVm::INPUTS + HalfKAVm::INPUTS + PIECE_INPUTS + REL_INPUTS;
 
     static constexpr int MAX_PIECE_FEATURES = 40;
     static constexpr int MAX_ACTIVE_FEATURES = HalfKAEVm::MAX_ACTIVE_FEATURES + HalfKAVm::MAX_ACTIVE_FEATURES + MAX_PIECE_FEATURES + MAX_PIECE_FEATURES;
