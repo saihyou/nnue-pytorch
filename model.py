@@ -8,9 +8,9 @@ import pytorch_lightning as pl
 import sys
 
 # 3 layer fully connected network
-L1 = 1024
+L1 = 1280
 L2 = 8
-L3 = 32
+L3 = 64
 
 def coalesce_ft_weights(model, layer):
   weight = layer.weight.data
@@ -127,9 +127,9 @@ class NNUE(pl.LightningModule):
 
   It is not ideal for training a Pytorch quantized model directly.
   """
-  def __init__(self, feature_set, start_lambda=1.0, end_lambda=1.0, max_epoch=800, gamma=0.992, lr=8.75e-4, epoch_size=100_000_000, batch_size=16384, in_scaling=240, out_scaling=280, offset=270):
+  def __init__(self, feature_set, start_lambda=1.0, end_lambda=1.0, max_epoch=800, gamma=0.992, lr=8.75e-4, epoch_size=100_000_000, batch_size=16384, in_scaling=240, out_scaling=280, offset=270, adjust_loss=0.1):
     super(NNUE, self).__init__()
-    self.num_ls_buckets = 8
+    self.num_ls_buckets = 4
     self.input = nn.Linear(feature_set.num_features, L1)
     self.feature_set = feature_set
     self.layer_stacks = LayerStacks(self.num_ls_buckets)
@@ -147,6 +147,7 @@ class NNUE(pl.LightningModule):
     self.in_scaling = in_scaling
     self.out_scaling = out_scaling
     self.offset = offset
+    self.adjust_loss = adjust_loss
   
     max_hidden_weight = self.quantized_one / self.weight_scale_hidden
     max_out_weight = (self.quantized_one * self.quantized_one) / (self.nnue2score * self.weight_scale_out)

@@ -527,17 +527,10 @@ public:
 #endif
 
 	int stack_index() const {
-		constexpr int kIndexTable[] = {
-			7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-			6, 6, 
-			5, 5, 5,
-			4, 4,
-			3, 3,
-			2, 2, 2, 2,
-			1, 1, 1, 1, 1,
-			0, 0, 0, 0, 0, 0, 0, 0
-		};
-		return kIndexTable[((byColorBB[BLACK] & enemy_field(WHITE)) | (byColorBB[WHITE] & enemy_field(BLACK))).pop_count()];
+		constexpr int kIndexTable[] = {1, 1, 1, 1, 1, 0, 0, 0, 0};
+		auto fKing = sideToMove == BLACK ? rank_of(king_square(sideToMove)) : rank_of(Inv(king_square(sideToMove)));
+		auto eKing = sideToMove == BLACK ? rank_of(Inv(king_square(~sideToMove))) : rank_of(king_square(~sideToMove));
+		return kIndexTable[eKing] << 1 | kIndexTable[fKing];
 	}
 
 	// --- Accessing hash keys

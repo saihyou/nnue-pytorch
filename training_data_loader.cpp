@@ -559,7 +559,7 @@ static void EnsureInitialize()
     initialized = true;
 
     USI::init(Options);
-    //Bitboards::init();
+    Bitboards::init();
     //Position::init();
     //Search::init();
 
@@ -617,7 +617,7 @@ extern "C" {
         return nullptr;
     }
 
-    EXPORT Stream<SparseBatch>* CDECL create_sparse_batch_stream(const char* feature_set_c, int concurrency, const char* filename, int batch_size, bool cyclic, bool filtered, int random_fen_skipping)
+    EXPORT Stream<SparseBatch>* CDECL create_sparse_batch_stream(const char* feature_set_c, int concurrency, const char* filename, int batch_size, int cyclic, int filtered, int random_fen_skipping)
     {
         EnsureInitialize();
 
