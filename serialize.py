@@ -10,6 +10,7 @@ import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 from functools import reduce
 import operator
+from torch import nn
 
 def ascii_hist(name, x, bins=6):
   N,X = numpy.histogram(x, bins=bins)
@@ -95,7 +96,7 @@ class NNUEWriter():
     # weights stored as [41024][256], so we need to transpose the pytorch [256][41024]
     self.buf.extend(weight.transpose(0, 1).flatten().numpy().tobytes())
 
-  def write_fc_layer(self, layer, is_output=False):
+  def write_fc_layer(self, model, layer, is_output=False):
     # FC layers are stored as int8 weights, and int32 biases
     kWeightScaleBits = 6
     kActivationScale = 127.0
@@ -143,7 +144,7 @@ class NNUEReader():
     self.read_int32(feature_set.hash ^ (M.L1*2)) # Feature transformer hash
     self.read_feature_transformer(self.model.input)
     for i in range(self.model.num_ls_buckets):
-      l1 = nn.Linear(2*M.L1//2, M.L2)
+      l1 = nn.Linear(2*M.L1//2, M.L2+1)
       l2 = nn.Linear(M.L2*2, M.L3)
       output = nn.Linear(M.L3, 1)
 
@@ -152,8 +153,8 @@ class NNUEReader():
       self.read_fc_layer(l2)
       self.read_fc_layer(output, is_output=True)
 
-      self.model.layer_stacks.l1.weight.data[i*(M.L2):(i+1)*(M.L2), :] = l1.weight
-      self.model.layer_stacks.l1.bias.data[i*(M.L2):(i+1)*(M.L2)] = l1.bias
+      self.model.layer_stacks.l1.weight.data[i*(M.L2+1):(i+1)*(M.L2+1), :] = l1.weight
+      self.model.layer_stacks.l1.bias.data[i*(M.L2+1):(i+1)*(M.L2+1)] = l1.bias
       self.model.layer_stacks.l2.weight.data[i*M.L3:(i+1)*M.L3, :] = l2.weight
       self.model.layer_stacks.l2.bias.data[i*M.L3:(i+1)*M.L3] = l2.bias
       self.model.layer_stacks.output.weight.data[i:(i+1), :] = output.weight

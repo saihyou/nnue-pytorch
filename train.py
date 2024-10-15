@@ -76,7 +76,7 @@ def main():
       batch_size=args.batch_size,
       in_scaling=args.in_scaling,
       out_scaling=args.out_scaling,
-      offset=args.offset
+      offset=args.offset,
       adjust_loss=args.adjust_loss)
   else:
     nnue = torch.load(args.resume_from_model)

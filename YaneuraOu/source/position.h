@@ -527,10 +527,10 @@ public:
 #endif
 
 	int stack_index() const {
-		constexpr int kIndexTable[] = {1, 1, 1, 1, 1, 0, 0, 0, 0};
+		constexpr int kIndexTable[] = {2, 2, 2, 1, 1, 1, 0, 0, 0};
 		auto fKing = sideToMove == BLACK ? rank_of(king_square(sideToMove)) : rank_of(Inv(king_square(sideToMove)));
 		auto eKing = sideToMove == BLACK ? rank_of(Inv(king_square(~sideToMove))) : rank_of(king_square(~sideToMove));
-		return kIndexTable[eKing] << 1 | kIndexTable[fKing];
+		return kIndexTable[eKing] * 3 + kIndexTable[fKing];
 	}
 
 	// --- Accessing hash keys
