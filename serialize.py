@@ -208,6 +208,9 @@ def main():
   parser = argparse.ArgumentParser(description="Converts files between ckpt and nnue format.")
   parser.add_argument("source", help="Source file (can be .ckpt, .pt or .nnue)")
   parser.add_argument("target", help="Target file (can be .pt or .nnue)")
+  parser.add_argument("--ft_optimize", action='store_false', dest='ft_optimize', help="Whether to perform full feature transformer optimization (ftperm.py) on the resulting network. This process is very time consuming.")
+  parser.add_argument("--ft_optimize_data", default=None, type=str, dest='ft_optimize_data', help="Path to the dataset to use for FT optimization.")
+  parser.add_argument("--ft_optimize_count", default=10000, type=int, dest='ft_optimize_count', help="Number of positions to use for FT optimization.")
   features.add_argparse_args(parser)
   args = parser.parse_args()
 
@@ -216,24 +219,37 @@ def main():
   print('Converting %s to %s' % (args.source, args.target))
 
   if args.source.endswith(".pt") or args.source.endswith(".ckpt"):
-    if not args.target.endswith(".nnue"):
-      raise Exception("Target file must end with .nnue")
     if args.source.endswith(".pt"):
       nnue = torch.load(args.source)
     else:
       nnue = M.NNUE.load_from_checkpoint(args.source, feature_set=feature_set)
     nnue.eval()
+  elif args.source.endswith(".nnue"):
+    with open(args.source, 'rb') as f:
+      reader = NNUEReader(f, feature_set)
+      nnue = reader.model
+  else:
+    raise Exception('Invalid filetypes: ' + str(args))
+  
+  if args.ft_optimize:
+    import ftperm
+    if args.ft_optimize_data is None:
+      raise Exception('Invalid dataset path for FT optimization. (--ft_optimize_data)')
+    if args.ft_optimize_count is None or args.ft_optimize_count < 1:
+      raise Exception('Invalid number of positions to optimize FT with. (--ft_optimize_count)')
+
+    ftperm.ft_optimize(nnue, args.ft_optimize_data, args.ft_optimize_count)
+  
+  if args.target.endswith('.ckpt'):
+    raise Exception('Cannot convert into .ckpt')
+  elif args.target.endswith('.pt'):
+    torch.save(nnue, args.target)
+  elif args.target.endswith('.nnue'):
     writer = NNUEWriter(nnue)
     with open(args.target, 'wb') as f:
       f.write(writer.buf)
-  elif args.source.endswith(".nnue"):
-    if not args.target.endswith(".pt"):
-      raise Exception("Target file must end with .pt")
-    with open(args.source, 'rb') as f:
-      reader = NNUEReader(f, feature_set)
-    torch.save(reader.model, args.target)
   else:
-    raise Exception('Invalid filetypes: ' + str(args))
+    raise Exception('Invalid network output format.')
 
 if __name__ == '__main__':
   main()
