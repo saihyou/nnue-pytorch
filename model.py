@@ -6,6 +6,7 @@ from torch import nn
 import torch.nn.functional as F
 import pytorch_lightning as pl
 import sys
+from feature_transformer import DoubleFeatureTransformerSlice
 
 # 3 layer fully connected network
 L1 = 1536
@@ -131,8 +132,8 @@ class NNUE(pl.LightningModule):
   """
   def __init__(self, feature_set, start_lambda=1.0, end_lambda=1.0, max_epoch=800, gamma=0.992, lr=8.75e-4, epoch_size=100_000_000, batch_size=16384, in_scaling=240, out_scaling=280, offset=270, adjust_loss=0.1):
     super(NNUE, self).__init__()
-    self.num_ls_buckets = 9
-    self.input = nn.Linear(feature_set.num_features, L1)
+    self.num_ls_buckets = 4
+    self.input = DoubleFeatureTransformerSlice(feature_set.num_features, L1)
     self.feature_set = feature_set
     self.layer_stacks = LayerStacks(self.num_ls_buckets)
     self.start_lambda = start_lambda
@@ -173,7 +174,7 @@ class NNUE(pl.LightningModule):
     weights = self.input.weight
     with torch.no_grad():
       for a, b in self.feature_set.get_virtual_feature_ranges():
-        weights[:, a:b] = 0.0
+        weights[a:b, :] = 0.0
     self.input.weight = nn.Parameter(weights)
 
   '''
@@ -238,16 +239,15 @@ class NNUE(pl.LightningModule):
     if old_feature_block.name == next(iter(new_feature_block.factors)):
       # We can just extend with zeros since it's unfactorized -> factorized
       weights = self.input.weight
-      padding = weights.new_zeros((weights.shape[0], new_feature_block.num_virtual_features))
-      weights = torch.cat([weights, padding], dim=1)
+      padding = weights.new_zeros((new_feature_block.num_virtual_features, weights.shape[1]))
+      weights = torch.cat([weights, padding], dim=0)
       self.input.weight = nn.Parameter(weights)
       self.feature_set = new_feature_set
     else:
       raise Exception('Cannot change feature set from {} to {}.'.format(self.feature_set.name, new_feature_set.name))
 
-  def forward(self, us, them, w_in, b_in, layer_stack_indices):
-    w = self.input(w_in)
-    b = self.input(b_in)
+  def forward(self, us, them, white_indices, white_values, black_indices, black_values, layer_stack_indices):
+    w, b = self.input(white_indices, white_values, black_indices, black_values)
     l0_ = (us * torch.cat([w, b], dim=1)) + (them * torch.cat([b, w], dim=1))
     # clamp here is used as a clipped relu to (0.0, 1.0)
     l0_ = torch.clamp(l0_, 0.0, 1.0)
@@ -261,7 +261,7 @@ class NNUE(pl.LightningModule):
 
   def step_(self, batch, batch_idx, loss_type):
     self._clip_weights()
-    us, them, white, black, outcome, score, layer_stack_indices = batch
+    us, them, white_indices, white_values, black_indices, black_values, outcome, score, layer_stack_indices = batch
 
     # convert the network and search scores to an estimate match result
     # based on the win_rate_model, with scalings and offsets optimized
@@ -269,7 +269,7 @@ class NNUE(pl.LightningModule):
     out_scaling = self.out_scaling
     offset = self.offset
 
-    scorenet = self(us, them, white, black, layer_stack_indices) * self.nnue2score
+    scorenet = self(us, them, white_indices, white_values, black_indices, black_values, layer_stack_indices) * self.nnue2score
     q  = ( scorenet - offset) / in_scaling  # used to compute the chance of a win
     qm = (-scorenet - offset) / in_scaling  # used to compute the chance of a loss
     qf = 0.5 * (1.0 + q.sigmoid() - qm.sigmoid())  # estimated match result (using win, loss and draw probs).
@@ -282,8 +282,8 @@ class NNUE(pl.LightningModule):
     actual_lambda = self.start_lambda + (self.end_lambda - self.start_lambda) * (self.current_epoch / self.max_epoch)
     pt = pf * actual_lambda + t * (1.0 - actual_lambda)
 
-    loss = torch.pow(torch.abs(pt - qf), 2.5).mean()
-    loss = loss * ((qf > pt) * 0.1 + 1)
+    loss = torch.pow(torch.abs(pt - qf), 2.5)
+    loss = loss * ((qf > pt) * self.adjust_loss + 1)
     loss = loss.mean()
 
     self.log(loss_type, loss)
