@@ -8,7 +8,7 @@ import pytorch_lightning as pl
 import sys
 
 # 3 layer fully connected network
-L1 = 1536
+L1 = 2048
 L2 = 15
 L3 = 64
 
@@ -131,7 +131,7 @@ class NNUE(pl.LightningModule):
   """
   def __init__(self, feature_set, start_lambda=1.0, end_lambda=1.0, max_epoch=800, gamma=0.992, lr=8.75e-4, epoch_size=100_000_000, batch_size=16384, in_scaling=240, out_scaling=280, offset=270, adjust_loss=0.1):
     super(NNUE, self).__init__()
-    self.num_ls_buckets = 9
+    self.num_ls_buckets = 4
     self.input = nn.Linear(feature_set.num_features, L1)
     self.feature_set = feature_set
     self.layer_stacks = LayerStacks(self.num_ls_buckets)
@@ -282,8 +282,8 @@ class NNUE(pl.LightningModule):
     actual_lambda = self.start_lambda + (self.end_lambda - self.start_lambda) * (self.current_epoch / self.max_epoch)
     pt = pf * actual_lambda + t * (1.0 - actual_lambda)
 
-    loss = torch.pow(torch.abs(pt - qf), 2.5).mean()
-    loss = loss * ((qf > pt) * 0.1 + 1)
+    loss = torch.pow(torch.abs(pt - qf), 2.5)
+    loss = loss * ((qf > pt) * self.adjust_loss + 1)
     loss = loss.mean()
 
     self.log(loss_type, loss)
