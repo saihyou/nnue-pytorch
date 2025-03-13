@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 from functools import reduce
 import operator
 from torch import nn
+from numba import njit
 
 def ascii_hist(name, x, bins=6):
   N,X = numpy.histogram(x, bins=bins)
@@ -133,7 +134,7 @@ class NNUEWriter():
     ascii_hist('ft weight:', weight.numpy())
 
     self.write_tensor(bias.flatten().numpy(), ft_compression)
-    self.write_tensor(weight.flatten().numpy(), ft_compression)
+    self.write_tensor(weight.transpose(0, 1).flatten().numpy(), ft_compression)
 
   def write_fc_layer(self, model, layer, is_output=False):
     # FC layers are stored as int8 weights, and int32 biases
