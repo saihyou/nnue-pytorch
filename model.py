@@ -8,7 +8,7 @@ import pytorch_lightning as pl
 import sys
 
 # 3 layer fully connected network
-L1 = 2048
+L1 = 2304
 L2 = 15
 L3 = 64
 

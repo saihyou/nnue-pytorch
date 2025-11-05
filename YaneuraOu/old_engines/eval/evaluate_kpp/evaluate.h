@@ -219,7 +219,9 @@ namespace Eval {
 
 		// 王も一意な駒番号を付与。これは2駒関係をするときに王に一意な番号が必要なための拡張
 		f_king = fe_end,
+		fe_king = f_king,
 		e_king = f_king + SQ_NB,
+		v2_end = fe_king + SQ_NB,
 		fe_end2 = e_king + SQ_NB, // 玉も含めた末尾の番号。
 
 		// 末尾は評価関数の性質によって異なるので、BONA_PIECE_NBを定義するわけにはいかない。

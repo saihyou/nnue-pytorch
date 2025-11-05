@@ -8,6 +8,7 @@
 #include <thread>
 #include <deque>
 #include <random>
+#include <array>
 
 #include "YaneuraOu/source/config.h"
 #include "YaneuraOu/source/usi.h"
@@ -282,6 +283,128 @@ struct HalfKAFactorized {
             int idx = counter * 2;
             features[idx] = i;
             features[idx + 1] = rel_features[k];
+            values[counter] = 1.0f;
+            counter += 1;
+        }
+    }
+};
+
+struct HalfKAv2_hm {
+    static constexpr int NUM_SQ = 81;
+    static constexpr int NUM_PLANES = 1548 + 81;
+    static constexpr int NUM_BUCKETS = 45;
+    static constexpr int INPUTS = NUM_PLANES * NUM_BUCKETS;
+    static constexpr int MAX_ACTIVE_FEATURES = 40;
+
+    static constexpr std::array<int, NUM_SQ> KING_BUCKET_TABLE = []() {
+        std::array<int, NUM_SQ> table{};
+        for (int idx = 0; idx < NUM_SQ; ++idx) {
+            Square sq = static_cast<Square>(idx);
+            int file = static_cast<int>(file_of(sq));
+            if (file < 4) {
+                file = 8 - file;
+            }
+            int rank = static_cast<int>(rank_of(sq));
+            table[idx] = rank * 5 + (file - 4);
+        }
+        return table;
+    }();
+
+    static int king_bucket_index(Square sq)
+    {
+        return KING_BUCKET_TABLE[static_cast<int>(sq)];
+    }
+
+    static int orient_bona_piece(Eval::BonaPiece p, bool mirror)
+    {
+        int pi = static_cast<int>(p);
+        if (pi >= static_cast<int>(Eval::fe_end2))
+            return -1;
+        if (pi < static_cast<int>(Eval::fe_hand_end))
+            return pi;
+        int offset = pi - static_cast<int>(Eval::fe_hand_end);
+        int piece_kind = offset / NUM_SQ;
+        int sq_index = offset % NUM_SQ;
+        Square sq = static_cast<Square>(sq_index);
+        if (mirror) {
+            sq = Mir(sq);
+        }
+        if (piece_kind == 19) {
+            piece_kind = 18;
+        }
+        return static_cast<int>(Eval::fe_hand_end) + piece_kind * NUM_SQ + static_cast<int>(sq);
+    }
+
+    static int fill_features_sparse(int i, const TrainingDataEntry& e, int* features, float* values, int& counter, Color color)
+    {
+        auto& pos = *e.pos;
+        Eval::BonaPiece* pieces = color == Color::BLACK ? pos.eval_list()->piece_list_fb() : pos.eval_list()->piece_list_fw();
+
+        PieceNumber target = static_cast<PieceNumber>(PIECE_NUMBER_KING + color);
+        auto king_bona = pieces[target];
+        if (static_cast<int>(king_bona) >= static_cast<int>(Eval::fe_end2)) {
+            return INPUTS;
+        }
+
+        Square ksq = static_cast<Square>((king_bona - Eval::BonaPiece::f_king) % SQ_NB);
+        bool mirror = static_cast<int>(file_of(ksq)) < 4;
+        int bucket = king_bucket_index(ksq);
+
+        int features_unordered[MAX_ACTIVE_FEATURES];
+        int added = 0;
+
+        for (PieceNumber pn = PIECE_NUMBER_ZERO; pn < PIECE_NUMBER_NB; ++pn) {
+            auto p = pieces[pn];
+            int oriented = orient_bona_piece(p, mirror);
+            if (oriented < 0)
+                continue;
+            features_unordered[added++] = bucket * NUM_PLANES + oriented;
+        }
+
+        std::sort(features_unordered, features_unordered + added);
+        for (int k = 0; k < added; ++k)
+        {
+            int idx = counter * 2;
+            features[idx] = i;
+            features[idx + 1] = features_unordered[k];
+            values[counter] = 1.0f;
+            counter += 1;
+        }
+        return INPUTS;
+    }
+};
+
+struct HalfKAv2_hmFactorized {
+    static constexpr int PIECE_INPUTS = HalfKAv2_hm::NUM_PLANES;
+    static constexpr int INPUTS = HalfKAv2_hm::INPUTS + PIECE_INPUTS;
+
+    static constexpr int MAX_PIECE_FEATURES = HalfKAv2_hm::MAX_ACTIVE_FEATURES;
+    static constexpr int MAX_ACTIVE_FEATURES = HalfKAv2_hm::MAX_ACTIVE_FEATURES + MAX_PIECE_FEATURES;
+
+    static void fill_features_sparse(int i, const TrainingDataEntry& e, int* features, float* values, int& counter, Color color)
+    {
+        int offset = HalfKAv2_hm::fill_features_sparse(i, e, features, values, counter, color);
+
+        auto& pos = *e.pos;
+        Eval::BonaPiece* pieces = color == Color::BLACK ? pos.eval_list()->piece_list_fb() : pos.eval_list()->piece_list_fw();
+
+        PieceNumber target = static_cast<PieceNumber>(PIECE_NUMBER_KING + color);
+        auto king_bona = pieces[target];
+        if (static_cast<int>(king_bona) >= static_cast<int>(Eval::fe_end2)) {
+            return;
+        }
+
+        Square ksq = static_cast<Square>((king_bona - Eval::BonaPiece::f_king) % SQ_NB);
+        bool mirror = static_cast<int>(file_of(ksq)) < 4;
+
+        for (PieceNumber pn = PIECE_NUMBER_ZERO; pn < PIECE_NUMBER_NB; ++pn) {
+            auto p = pieces[pn];
+            int oriented = HalfKAv2_hm::orient_bona_piece(p, mirror);
+            if (oriented < 0)
+                continue;
+            int idx = counter * 2;
+            features[idx] = i;
+            features[idx + 1] = offset + oriented;
             values[counter] = 1.0f;
             counter += 1;
         }
@@ -613,6 +736,14 @@ extern "C" {
         {
              return new SparseBatch(FeatureSet<HalfKAFactorized>{}, entries);
         }
+        else if (feature_set == "HalfKAv2_hm")
+        {
+            return new SparseBatch(FeatureSet<HalfKAv2_hm>{}, entries);
+        }
+        else if (feature_set == "HalfKAv2_hm^")
+        {
+            return new SparseBatch(FeatureSet<HalfKAv2_hmFactorized>{}, entries);
+        }
         fprintf(stderr, "Unknown feature_set %s\n", feature_set_c);
         return nullptr;
     }
@@ -661,6 +792,14 @@ extern "C" {
         else if (feature_set == "HalfKA^")
         {
             return new FeaturedBatchStream<FeatureSet<HalfKAFactorized>, SparseBatch>(concurrency, filename, batch_size, cyclic, skipPredicate);
+        }
+        else if (feature_set == "HalfKAv2_hm")
+        {
+            return new FeaturedBatchStream<FeatureSet<HalfKAv2_hm>, SparseBatch>(concurrency, filename, batch_size, cyclic, skipPredicate);
+        }
+        else if (feature_set == "HalfKAv2_hm^")
+        {
+            return new FeaturedBatchStream<FeatureSet<HalfKAv2_hmFactorized>, SparseBatch>(concurrency, filename, batch_size, cyclic, skipPredicate);
         }
         fprintf(stderr, "Unknown feature_set %s\n", feature_set_c);
         return nullptr;
