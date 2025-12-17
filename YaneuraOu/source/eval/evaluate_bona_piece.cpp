@@ -57,10 +57,10 @@ namespace Eval
 
     // 通常の場合（金と小駒の成り駒を区別しない場合）
     #if !defined (DISTINGUISH_GOLDS)
-        { f_gold, e_gold }, // 成歩
-        { f_gold, e_gold }, // 成香
-        { f_gold, e_gold }, // 成桂
-        { f_gold, e_gold }, // 成銀
+        { f_pro_gold, e_pro_gold }, // 成歩
+        { f_pro_gold, e_pro_gold }, // 成香
+        { f_pro_gold, e_pro_gold }, // 成桂
+        { f_pro_gold, e_pro_gold }, // 成銀
 
     // 金と小駒の成り駒を区別する場合
     #else
@@ -87,10 +87,10 @@ namespace Eval
 
     // 通常の場合（金と小駒の成り駒を区別しない場合）
     #if !defined (DISTINGUISH_GOLDS)
-        { e_gold, f_gold }, // 成歩
-        { e_gold, f_gold }, // 成香
-        { e_gold, f_gold }, // 成桂
-        { e_gold, f_gold }, // 成銀
+        { e_pro_gold, f_pro_gold }, // 成歩
+        { e_pro_gold, f_pro_gold }, // 成香
+        { e_pro_gold, f_pro_gold }, // 成桂
+        { e_pro_gold, f_pro_gold }, // 成銀
 
     // 金と小駒の成り駒を区別する場合
     #else

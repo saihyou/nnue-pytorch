@@ -7,9 +7,9 @@ from feature_block import *
 NUM_SQ = 81
 #NUM_PT = 12
 #NUM_PLANES = 1629
-NUM_PLANES = 1629 + 81
+NUM_PLANES = 1791  # matches Eval::e_king (fe_end + SQ_NB)
 NUM_PLANES_FACT = NUM_PLANES
-REL_FEATURES = 5870
+REL_FEATURES = 6448  # (Eval::fe_end2 - fe_hand_end) / 81 * 17 * 17 + fe_hand_end
 
 def orient(is_white_pov: bool, sq: int):
   return (63 * (not is_white_pov)) ^ sq
@@ -32,7 +32,7 @@ class Features(FeatureBlock):
 
 class FactorizedFeatures(FeatureBlock):
   def __init__(self):
-    super(FactorizedFeatures, self).__init__('HalfKA^', 0x5f134cb8, OrderedDict([('HalfKA', NUM_PLANES * NUM_SQ), ('A', NUM_PLANES_FACT), ('HalfRelKA', REL_FEATURES)]))
+    super(FactorizedFeatures, self).__init__('HalfKA^', 0x5f134cb8, OrderedDict([('HalfKA', NUM_PLANES * NUM_SQ), ('HalfRelKA', REL_FEATURES)]))
 
   def get_active_features(self, board: chess.Board):
     raise Exception('Not supported yet, you must use the c++ data loader for factorizer support during training')
@@ -54,7 +54,7 @@ class FactorizedFeatures(FeatureBlock):
       relative_rank = (sq_p % 9) - (sq_k % 9) + (h // 2)
       return int(h * w * piece_index + h * relative_file + relative_rank + 90)
 
-    return [idx, self.get_factor_base_feature('A') + a_idx, self.get_factor_base_feature('HalfRelKA') + _make_relka_index(k_idx, a_idx)]
+    return [idx, self.get_factor_base_feature('HalfRelKA') + _make_relka_index(k_idx, a_idx)]
 
 '''
 This is used by the features module for discovery of feature blocks.

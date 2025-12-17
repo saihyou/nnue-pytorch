@@ -62,7 +62,7 @@ static Square orient(Color color, Square sq)
 
 struct HalfKP {
     static constexpr int NUM_SQ = 81;
-    static constexpr int NUM_PLANES = 1548; // == fe_end
+    static constexpr int NUM_PLANES = static_cast<int>(Eval::fe_end);
     static constexpr int INPUTS = NUM_PLANES * NUM_SQ;
 
     static constexpr int MAX_ACTIVE_FEATURES = 38;
@@ -184,11 +184,7 @@ struct HalfKPFactorized {
 
 struct HalfKA {
     static constexpr int NUM_SQ = 81;
-#if 0
-    static constexpr int NUM_PLANES = 1548 + 81;
-#else
-    static constexpr int NUM_PLANES = 1548 + 81 * 2;
-#endif
+    static constexpr int NUM_PLANES = static_cast<int>(Eval::e_king);
     static constexpr int INPUTS = NUM_PLANES * NUM_SQ;
 
     static constexpr int MAX_ACTIVE_FEATURES = 40;
@@ -211,7 +207,7 @@ struct HalfKA {
         int features_unordered[MAX_ACTIVE_FEATURES];
         for (PieceNumber i = PIECE_NUMBER_ZERO; i < PIECE_NUMBER_NB; ++i) {
             auto p = pieces[i];
-#if 0
+#if 1
             if (p >= Eval::e_king) {
                 p = static_cast<Eval::BonaPiece>(static_cast<int>(p) - 81);
             }
@@ -235,13 +231,13 @@ struct HalfKA {
 
 struct HalfKAFactorized {
     // Factorized features
-    static constexpr int PIECE_INPUTS = HalfKA::NUM_PLANES ;
+    static constexpr int PIECE_INPUTS = HalfKA::NUM_PLANES;
     static constexpr int NUN_PIECE_KINDS = (Eval::fe_end2 - Eval::fe_hand_end) / 81;
     static constexpr int REL_INPUTS = NUN_PIECE_KINDS * 17 * 17 + Eval::fe_hand_end;
-    static constexpr int INPUTS = HalfKA::INPUTS + PIECE_INPUTS + REL_INPUTS;
+    static constexpr int INPUTS = HalfKA::INPUTS + REL_INPUTS;
 
     static constexpr int MAX_PIECE_FEATURES = 40;
-    static constexpr int MAX_ACTIVE_FEATURES = HalfKA::MAX_ACTIVE_FEATURES + MAX_PIECE_FEATURES + MAX_PIECE_FEATURES;
+    static constexpr int MAX_ACTIVE_FEATURES = HalfKA::MAX_ACTIVE_FEATURES + MAX_PIECE_FEATURES;
 
     static void fill_features_sparse(int i, const TrainingDataEntry& e, int* features, float* values, int& counter, Color color)
     {
@@ -257,27 +253,18 @@ struct HalfKAFactorized {
         }
         PieceNumber target = static_cast<PieceNumber>(PIECE_NUMBER_KING + color);
         auto sq_target_k = static_cast<Square>((pieces[target] - Eval::BonaPiece::f_king) % SQ_NB);
-        int rel_offset = offset + PIECE_INPUTS;
         // We order the features so that the resulting sparse
         // tensor is coalesced. Note that we can just sort
         // the parts where values are all 1.0f and leave the
         // halfk feature where it was.
-        int features_unordered[40];
         int rel_features[40];
         for (PieceNumber j = PIECE_NUMBER_ZERO; j < PIECE_NUMBER_NB; ++j) {
             auto p = pieces[j];
-            features_unordered[j] = offset + p;
-            rel_features[j] = rel_offset + make_relkp_index(sq_target_k, p);
+            if (p >= Eval::e_king) {
+                p = static_cast<Eval::BonaPiece>(static_cast<int>(p) - 81);
+            }
+            rel_features[j] = offset + make_relkp_index(sq_target_k, p);
         }
-        std::sort(features_unordered, features_unordered + PIECE_NUMBER_NB);
-        for (int k = 0; k < PIECE_NUMBER_NB; ++k) {
-            int idx = counter * 2;
-            features[idx] = i;
-            features[idx + 1] = features_unordered[k];
-            values[counter] = 1.0f;
-            counter += 1;
-        }
-
         std::sort(rel_features, rel_features + PIECE_NUMBER_NB);
         for (int k = 0; k < PIECE_NUMBER_NB; ++k) {
             int idx = counter * 2;

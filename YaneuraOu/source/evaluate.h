@@ -183,7 +183,9 @@ namespace Eval {
 		e_pro_silver = f_pro_silver + 81,
 		fe_new_end = e_pro_silver + 81,
 #else
-		fe_new_end = fe_old_end,
+		f_pro_gold = fe_old_end,
+		e_pro_gold = f_pro_gold + 81,
+		fe_new_end = e_pro_gold + 81,
 #endif
 
 		fe_end = fe_new_end,

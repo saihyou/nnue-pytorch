@@ -6,8 +6,8 @@ from feature_block import *
 
 NUM_SQ = 81
 # NUM_PT = 10
-NUM_PLANES = 1548
-REL_FEATURES = 5292
+NUM_PLANES = 1710  # matches Eval::fe_end
+REL_FEATURES = 5870  # (Eval::fe_end - fe_hand_end) / 81 * 17 * 17 + fe_hand_end
 
 def orient(is_white_pov: bool, sq: int):
   return (63 * (not is_white_pov)) ^ sq
