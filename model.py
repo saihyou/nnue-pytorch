@@ -274,8 +274,25 @@ class NNUE(pl.LightningModule):
     qm = (-scorenet - offset) / in_scaling  # used to compute the chance of a loss
     qf = 0.5 * (1.0 + q.sigmoid() - qm.sigmoid())  # estimated match result (using win, loss and draw probs).
 
-    p  = ( score - offset) / out_scaling
-    pm = (-score - offset) / out_scaling
+    #p  = ( score - offset) / out_scaling
+    #pm = (-score - offset) / out_scaling
+    #pf = 0.5 * (1.0 + p.sigmoid() - pm.sigmoid())
+    INT16_SCALE = 65534.0
+    INT16_OFFSET = -32767
+    data_scaling = 285
+    # 勝率データを評価値に変換（データスケールを使用）
+    pf_raw = (score - INT16_OFFSET) / INT16_SCALE
+    epsilon = 1e-7
+    pf_clamped = torch.clamp(pf_raw, epsilon, 1.0 - epsilon)
+
+    # 勝率を評価値に変換（データスケールを使用）
+    virtual_score = -data_scaling * torch.log((1.0 - pf_clamped) / pf_clamped)
+
+    # 学習スケールで勝率を計算（オフセットを適用）
+    p = (virtual_score - offset) / out_scaling
+    pm = (-virtual_score - offset) / out_scaling
+
+    # 勝率（pf）を再計算
     pf = 0.5 * (1.0 + p.sigmoid() - pm.sigmoid())
 
     t = outcome

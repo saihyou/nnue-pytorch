@@ -375,15 +375,17 @@ struct HalfKAv2_hm {
 };
 
 struct HalfKAv2_hmFactorized {
+    static constexpr int NUN_PIECE_KINDS = (Eval::fe_end2 - Eval::fe_hand_end) / 81;
+    static constexpr int REL_INPUTS = NUN_PIECE_KINDS * 17 * 17 + Eval::fe_hand_end;
     static constexpr int PIECE_INPUTS = HalfKAv2_hm::NUM_PLANES;
-    static constexpr int INPUTS = HalfKAv2_hm::INPUTS + PIECE_INPUTS;
-
+    static constexpr int INPUTS = HalfKAv2_hm::INPUTS + REL_INPUTS;
     static constexpr int MAX_PIECE_FEATURES = HalfKAv2_hm::MAX_ACTIVE_FEATURES;
     static constexpr int MAX_ACTIVE_FEATURES = HalfKAv2_hm::MAX_ACTIVE_FEATURES + MAX_PIECE_FEATURES;
 
     static void fill_features_sparse(int i, const TrainingDataEntry& e, int* features, float* values, int& counter, Color color)
     {
         int offset = HalfKAv2_hm::fill_features_sparse(i, e, features, values, counter, color);
+        int rel_offset = offset;
 
         auto& pos = *e.pos;
         Eval::BonaPiece* pieces = color == Color::BLACK ? pos.eval_list()->piece_list_fb() : pos.eval_list()->piece_list_fw();
@@ -395,19 +397,24 @@ struct HalfKAv2_hmFactorized {
         }
 
         Square ksq = static_cast<Square>((king_bona - Eval::BonaPiece::f_king) % SQ_NB);
-        bool mirror = static_cast<int>(file_of(ksq)) < 4;
-
-        for (PieceNumber pn = PIECE_NUMBER_ZERO; pn < PIECE_NUMBER_NB; ++pn) {
-            auto p = pieces[pn];
-            int oriented = HalfKAv2_hm::orient_bona_piece(p, mirror);
-            if (oriented < 0)
+        int rel_features[PIECE_NUMBER_NB];
+        int rel_added = 0;
+        for (PieceNumber j = PIECE_NUMBER_ZERO; j < PIECE_NUMBER_NB; ++j) {
+            auto p = pieces[j];
+            if (static_cast<int>(p) >= static_cast<int>(Eval::fe_end2)) {
                 continue;
+            }
+            rel_features[rel_added++] = rel_offset + make_relkp_index(ksq, p);
+        }
+        std::sort(rel_features, rel_features + rel_added);
+        for (int k = 0; k < rel_added; ++k) {
             int idx = counter * 2;
             features[idx] = i;
-            features[idx + 1] = offset + oriented;
+            features[idx + 1] = rel_features[k];
             values[counter] = 1.0f;
             counter += 1;
         }
+
     }
 };
 
