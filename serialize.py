@@ -2,7 +2,7 @@ import argparse
 import features
 import math
 import model as M
-import numpy
+import numpy as np
 import nnue_bin_dataset
 import struct
 import torch
@@ -14,7 +14,7 @@ from torch import nn
 from numba import njit
 
 def ascii_hist(name, x, bins=6):
-  N,X = numpy.histogram(x, bins=bins)
+  N,X = np.histogram(x, bins=bins)
   total = 1.0*len(x)
   width = 50
   nmax = N.max()
